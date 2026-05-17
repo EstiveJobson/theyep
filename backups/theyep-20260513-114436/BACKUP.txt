@@ -1,0 +1,5 @@
+﻿TheYep backup
+Created: 2026-05-13 11:44:37 -03:00
+Source: C:\Users\Serginho\Documents\New project 2
+Excluded: .git, node_modules, dist, backups
+Restore: copy this folder contents back to the project root, then run npm.cmd install and npm.cmd run build
