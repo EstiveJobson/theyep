@@ -5,11 +5,14 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-/** Flat ESLint config for the TanStack Start app-builder template. */
+/** Configuração flat do ESLint para o TheYep (Next.js + TypeScript). */
 export default tseslint.config(
   {
     ignores: [
       "dist/**",
+      ".next/**",
+      ".next-build/**",
+      "next-env.d.ts",
       ".output/**",
       ".vercel/**",
       ".nitro/**",

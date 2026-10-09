@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect } from "react";
 import type { ReactNode } from "react";
-import { PreviewBridge } from "@/components/preview-bridge";
 
 const THEME_KEY = "theyep-theme";
 
@@ -98,7 +97,6 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <PreviewBridge />
       <header className="sticky top-0 z-20 border-b border-line bg-bg">
         <div className="shell flex h-14 items-center justify-between px-4">
           <Link href="/" className="text-2xl font-extrabold tracking-tight text-pink">
