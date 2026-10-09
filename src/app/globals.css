@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --card: #ffffff;
+  --muted: #5e5e5e;
+  --line: #e4e4e4;
+  --pink: #f06292;
+  --blue: #42a5f5;
+  /* #42A5F5 as text on white is too faint. Same blue, darker ink in light mode. */
+  --blue-ink: #1565c0;
+  --yellow: #ffd54f;
+  --on-accent: #1a1a1a;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #212121;
+  --fg: #f3f3f3;
+  --card: #2c2c2c;
+  --muted: #b5b5b5;
+  --line: #3d3d3d;
+  --blue-ink: #42a5f5;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-pink: var(--pink);
+  --color-blue: var(--blue);
+  --color-blue-ink: var(--blue-ink);
+  --color-yellow: var(--yellow);
+  --color-on-accent: var(--on-accent);
+  --font-sans: var(--font-nunito), "Nunito", "Segoe UI", sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: var(--yellow);
+    color: var(--on-accent);
+  }
+
+  h1,
+  h2 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+.shell {
+  width: 100%;
+  max-width: 600px;
+  margin-inline: auto;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+.page-main {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+}
+
+.tabbar {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (min-width: 768px) {
+  .page-main {
+    padding-bottom: 2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
