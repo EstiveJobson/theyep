@@ -1,71 +1,71 @@
 # TheYep
 
-> A volta da internet divertida, colorida e social, feita para estudantes e escolas.
+> Bringing back the fun, colorful and social internet, made for students and schools.
 
-**Status:** v1 em desenvolvimento 🚧
+**Status:** v1 in development 🚧
 
-TheYep é uma rede social leve para a comunidade escolar: você cria sua conta com e-mail, monta seu perfil e acompanha o que a galera da sua escola publica. A interface é em português, funciona bem no celular e pode ser instalada como app (PWA).
+TheYep is a lightweight social network for school communities: you sign up with your email, set up your profile and follow what people at your school are posting. It is mobile-first and can be installed as an app (PWA). The app's interface is in Brazilian Portuguese.
 
-## Funcionalidades
+## Features
 
-### Já funcionando
+### Working now
 
-- Criar conta e entrar com e-mail e senha (Supabase Auth)
-- Página de perfil com nome, bio, foto (ou a inicial do nome) e data de entrada. O perfil é criado automaticamente no cadastro
-- Sair da conta
-- Tema claro e escuro, seguindo o sistema ou escolhido pelo usuário
-- Navegação mobile-first: barra de abas no celular e menu no topo no desktop
-- PWA: manifesto e ícones para instalar na tela inicial
-- Banco com Row Level Security: cada usuário só cria e edita o próprio perfil e só envia arquivos para a própria pasta
+- Sign up and log in with email and password (Supabase Auth)
+- Profile page with name, bio, photo (or the name's initial) and join date. The profile is created automatically on sign-up
+- Log out
+- Light and dark theme, following the system or chosen by the user
+- Mobile-first navigation: bottom tab bar on phones and top menu on desktop
+- PWA: manifest and icons for installing to the home screen
+- Database with Row Level Security: each user can only create and edit their own profile and only upload files to their own folder
 
-### Em construção (escopo da v1)
+### In progress (v1 scope)
 
-- Feed geral e feed do campus (a tela inicial ainda é um placeholder)
-- Posts com texto e foto, escolhendo quem pode ver
-- Curtir e comentar
-- Apagar os próprios posts e a própria conta
+- General feed and campus feed (the home screen is still a placeholder)
+- Text and photo posts, with a choice of who can see them
+- Likes and comments
+- Deleting your own posts and your own account
 
-A base de dados já tem a tabela de escolas e os buckets de fotos (`avatars` e `post-photos`) prontos para essas funções.
+The database already has the schools table and the photo buckets (`avatars` and `post-photos`) ready for these features.
 
-## Stack
+## Tech stack
 
 - [Next.js 15](https://nextjs.org/) (App Router) + React 19 + TypeScript
-- [Supabase](https://supabase.com/): autenticação, Postgres e Storage (`@supabase/ssr` e `@supabase/supabase-js`)
+- [Supabase](https://supabase.com/): auth, Postgres and Storage (`@supabase/ssr` and `@supabase/supabase-js`)
 - [Tailwind CSS 4](https://tailwindcss.com/)
-- Ícones [Lucide](https://lucide.dev/) e fonte Nunito (`next/font`)
+- [Lucide](https://lucide.dev/) icons and the Nunito font (`next/font`)
 - ESLint + Prettier
 
-Cores da marca: rosa `#F06292`, azul `#42A5F5` e amarelo `#FFD54F`.
+Brand colors: pink `#F06292`, blue `#42A5F5` and yellow `#FFD54F`.
 
-## Estrutura de pastas
+## Project structure
 
 ```
 .
-├── public/                  # ícones, favicon, imagem OG e manifest.webmanifest (PWA)
+├── public/                  # icons, favicon, OG image and manifest.webmanifest (PWA)
 ├── src/
-│   ├── app/                 # rotas (App Router)
-│   │   ├── layout.tsx       # layout raiz, fonte, tema e metadados
-│   │   ├── page.tsx         # /        Início (feed)
-│   │   ├── postar/          # /postar  Publicar
-│   │   ├── perfil/          # /perfil  Login, cadastro e perfil
+│   ├── app/                 # routes (App Router)
+│   │   ├── layout.tsx       # root layout, font, theme and metadata
+│   │   ├── page.tsx         # /        Home (feed)
+│   │   ├── postar/          # /postar  Post
+│   │   ├── perfil/          # /perfil  Login, sign-up and profile
 │   │   ├── error.tsx
 │   │   ├── not-found.tsx
-│   │   └── globals.css      # tema e cores
-│   ├── components/          # Shell (cabeçalho e abas) e painel de perfil
+│   │   └── globals.css      # theme and colors
+│   ├── components/          # Shell (header and tabs) and profile panel
 │   ├── lib/
-│   │   ├── supabase/        # clientes do Supabase (navegador, servidor e middleware)
+│   │   ├── supabase/        # Supabase clients (browser, server and middleware)
 │   │   └── relative-time.ts
-│   └── middleware.ts        # renova a sessão do Supabase a cada requisição
-├── supabase/migrations/     # SQL do banco (tabelas, RLS, trigger e buckets)
-├── .env.example             # variáveis de ambiente necessárias
+│   └── middleware.ts        # refreshes the Supabase session on every request
+├── supabase/migrations/     # database SQL (tables, RLS, trigger and buckets)
+├── .env.example             # required environment variables
 └── next.config.ts
 ```
 
-## Como rodar localmente
+## Running locally
 
-**Pré-requisitos:** Node.js 20 ou superior (testado com Node 22), npm e um projeto gratuito no [Supabase](https://supabase.com/).
+**Requirements:** Node.js 20 or later (tested with Node 22), npm and a free [Supabase](https://supabase.com/) project.
 
-1. Clone o repositório e instale as dependências:
+1. Clone the repository and install dependencies:
 
    ```bash
    git clone https://github.com/EstiveJobson/theyep.git
@@ -73,66 +73,66 @@ Cores da marca: rosa `#F06292`, azul `#42A5F5` e amarelo `#FFD54F`.
    npm install
    ```
 
-2. Copie o arquivo de exemplo de variáveis de ambiente:
+2. Copy the example environment file:
 
    ```bash
    cp .env.example .env.local
    ```
 
-3. No `.env.local`, preencha com os dados do seu projeto Supabase (em **Project Settings → API**):
+3. In `.env.local`, fill in your Supabase project details (under **Project Settings → API**):
 
    ```
-   NEXT_PUBLIC_SUPABASE_URL=https://SEU-PROJETO.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon
+   NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    ```
 
-   Use só a chave `anon`. Nunca coloque a `service_role` no projeto nem commite o `.env.local`.
+   Only use the `anon` key. Never put the `service_role` key in the project and never commit `.env.local`.
 
-4. Prepare o banco: abra o **SQL Editor** do Supabase e rode o conteúdo de [`supabase/migrations/0001_foundation.sql`](supabase/migrations/0001_foundation.sql) uma vez. Antes, troque os nomes de exemplo `[ESCOLA_1]`, `[ESCOLA_2]` e `[ESCOLA_3]` pelas escolas reais.
+4. Set up the database: open the Supabase **SQL Editor** and run the contents of [`supabase/migrations/0001_foundation.sql`](supabase/migrations/0001_foundation.sql) once. Before that, replace the placeholder names `[ESCOLA_1]`, `[ESCOLA_2]` and `[ESCOLA_3]` with real schools.
 
-5. Rode o servidor de desenvolvimento:
+5. Start the development server:
 
    ```bash
    npm run dev
    ```
 
-   Abra [http://localhost:8080](http://localhost:8080).
+   Open [http://localhost:8080](http://localhost:8080).
 
-Sem as variáveis do Supabase o app ainda abre, mas o login fica desligado e mostra um aviso.
+Without the Supabase variables the app still opens, but login is disabled and a notice is shown.
 
 ## Scripts
 
-| Comando             | O que faz                                      |
-| ------------------- | ---------------------------------------------- |
-| `npm run dev`       | Servidor de desenvolvimento na porta 8080      |
-| `npm run build`     | Build de produção (gera a pasta `.next-build`) |
-| `npm run preview`   | Serve o build de produção em `127.0.0.1:8081`  |
-| `npm run typecheck` | Checagem de tipos com o TypeScript             |
-| `npm run lint`      | ESLint                                         |
-| `npm run format`    | Formata o código com o Prettier                |
+| Command             | What it does                                    |
+| ------------------- | ----------------------------------------------- |
+| `npm run dev`       | Development server on port 8080                 |
+| `npm run build`     | Production build (outputs to `.next-build`)     |
+| `npm run preview`   | Serves the production build on `127.0.0.1:8081` |
+| `npm run typecheck` | Type checking with TypeScript                   |
+| `npm run lint`      | ESLint                                          |
+| `npm run format`    | Formats the code with Prettier                  |
 
-> **Windows:** `build` e `preview` definem a variável `NEXT_DIST_DIR` no estilo Linux/macOS, que não funciona no PowerShell nem no CMD. No Windows, rode esses dois pelo Git Bash ou pelo WSL. O `npm run dev` funciona normalmente.
+> **Windows:** `build` and `preview` set the `NEXT_DIST_DIR` variable Linux/macOS-style, which doesn't work in PowerShell or CMD. On Windows, run those two from Git Bash or WSL. `npm run dev` works normally.
 
-## Deploy na Vercel
+## Deploying to Vercel
 
-1. Importe o repositório na [Vercel](https://vercel.com/new). O framework Next.js é detectado sozinho.
-2. Em **Settings → Environment Variables**, cadastre `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-3. Faça o deploy.
-4. No Supabase, em **Authentication → URL Configuration**, coloque o domínio da Vercel como _Site URL_ para que os links de confirmação de e-mail funcionem.
+1. Import the repository on [Vercel](https://vercel.com/new). The Next.js framework is detected automatically.
+2. Under **Settings → Environment Variables**, add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+3. Deploy.
+4. In Supabase, under **Authentication → URL Configuration**, set your Vercel domain as the _Site URL_ so email confirmation links work.
 
 ## Roadmap
 
-Fica para depois da v1:
+Planned for after v1:
 
-- Mensagens diretas e grupos
+- Direct messages and groups
 - The Clips
-- Selo de estudante verificado
-- Busca
+- Verified student badge
+- Search
 
-## Licença
+## License
 
-Distribuído sob a licença MIT. Veja [LICENSE](LICENSE).
+Distributed under the MIT License. See [LICENSE](LICENSE).
 
-## Autor
+## Author
 
-Feito por **Sérgio Vieira** · GitHub [@EstiveJobson](https://github.com/EstiveJobson)
+Made by **Sérgio Vieira** · GitHub [@EstiveJobson](https://github.com/EstiveJobson)

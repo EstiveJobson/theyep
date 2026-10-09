@@ -5,7 +5,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-/** Configuração flat do ESLint para o TheYep (Next.js + TypeScript). */
+/** Flat ESLint config for TheYep (Next.js + TypeScript). */
 export default tseslint.config(
   {
     ignores: [
