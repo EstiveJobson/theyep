@@ -1,5 +1,9 @@
 {
-  "name": "app-builder-workspace",
+  "name": "theyep",
+  "version": "0.1.0",
+  "description": "TheYep: a fun, colorful social network for students and schools.",
+  "license": "MIT",
+  "author": "Sérgio Vieira (https://github.com/EstiveJobson)",
   "private": true,
   "sideEffects": false,
   "type": "module",
