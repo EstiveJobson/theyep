@@ -99,8 +99,21 @@ export function Shell({ children }: { children: ReactNode }) {
     <>
       <header className="sticky top-0 z-20 border-b border-line bg-bg">
         <div className="shell flex h-14 items-center justify-between px-4">
-          <Link href="/" className="text-2xl font-extrabold tracking-tight text-pink">
-            TheYep
+          <Link href="/" className="inline-flex h-14 shrink-0 items-center">
+            <img
+              src="/logo-burst-soft.svg"
+              alt="TheYep"
+              width={970}
+              height={836}
+              className="h-12 w-auto dark:hidden"
+            />
+            <img
+              src="/logo-dark-burst-soft.svg"
+              alt="TheYep"
+              width={970}
+              height={836}
+              className="hidden h-12 w-auto dark:block"
+            />
           </Link>
           <div className="flex items-center gap-1">
             <nav className="hidden items-center md:flex" aria-label="Navegação principal">
