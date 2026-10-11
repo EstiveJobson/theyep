@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { applyPendingSchool } from "@/lib/pending-school";
 import { supabasePublicEnv } from "@/lib/supabase/env";
 
 export async function updateSession(request: NextRequest) {
@@ -24,6 +25,13 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const { data } = await supabase.auth.getUser();
+  if (data.user) {
+    try {
+      await applyPendingSchool(supabase, data.user);
+    } catch (error) {
+      console.error("pending school", error);
+    }
+  }
   return response;
 }
