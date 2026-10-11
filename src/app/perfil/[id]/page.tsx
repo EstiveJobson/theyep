@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { AuthorPosts } from "@/components/author-posts";
-import { ProfileSocial } from "@/components/profile-social";
+import { PublicProfile } from "@/components/public-profile";
 import type { FollowStats } from "@/lib/follows";
 import { isUuid } from "@/lib/ids";
 import { joinedLabel } from "@/lib/relative-time";
@@ -32,6 +31,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
     );
   }
 
+  const { user } = await getViewer();
   const { data, error } = await supabase
     .from("profiles")
     .select("id, name, bio, avatar_url, created_at, schools(short_name)")
@@ -49,45 +49,46 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   const profile = data as ProfileRow | null;
   if (!profile) notFound();
 
-  const { user } = await getViewer();
+  let blockedByMe = false;
+  if (user && user.id !== profile.id) {
+    const { data: block, error: blockError } = await supabase
+      .from("blocks")
+      .select("blocked_id")
+      .eq("blocker_id", user.id)
+      .eq("blocked_id", profile.id)
+      .maybeSingle();
+    if (blockError) {
+      return (
+        <section className="card px-6 py-10 text-center">
+          <h1 className="text-lg font-extrabold">Não foi possível carregar o perfil</h1>
+        </section>
+      );
+    }
+    blockedByMe = Boolean(block);
+  }
+
   const name = profile.name.trim() || "Sem nome";
   const school = firstRelation(profile.schools)?.short_name?.trim() || "";
   const when = profile.created_at ? joinedLabel(profile.created_at) : "";
   let followStats: FollowStats | null = null;
-  if (user) {
+  if (user && !blockedByMe) {
     const stats = await getFollowStats(profile.id);
     if (stats.ok) followStats = stats.stats;
   }
 
   return (
-    <div className="space-y-3">
-      <section className="card p-4">
-        <div className="flex items-center gap-3">
-          {profile.avatar_url ? (
-            <img
-              src={profile.avatar_url}
-              alt={name === "Sem nome" ? "Foto do perfil" : `Foto de ${name}`}
-              className="size-16 rounded-full object-cover"
-            />
-          ) : (
-            <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
-              {(name.charAt(0) || "Y").toUpperCase()}
-            </span>
-          )}
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-extrabold">{name}</h1>
-            {school ? <p className="truncate text-sm text-muted">{school}</p> : null}
-          </div>
-        </div>
-        {user ? (
-          <ProfileSocial profileId={profile.id} viewerId={user.id} initial={followStats} />
-        ) : null}
-        <p className="mt-4 whitespace-pre-wrap break-words text-sm">
-          {profile.bio.trim() || "Sem bio ainda."}
-        </p>
-        {when ? <p className="mt-2 text-sm text-muted">{when}</p> : null}
-      </section>
-      {user ? <AuthorPosts authorId={profile.id} viewerId={user.id} /> : null}
-    </div>
+    <PublicProfile
+      profile={{
+        id: profile.id,
+        name,
+        avatarUrl: profile.avatar_url,
+        bio: profile.bio,
+        school,
+        joined: when,
+      }}
+      viewerId={user?.id ?? null}
+      blockedByMe={blockedByMe}
+      followStats={followStats}
+    />
   );
 }
