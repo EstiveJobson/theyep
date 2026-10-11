@@ -28,11 +28,25 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  openGraph: {
+    title: "TheYep",
+    description: "Uma rede simples para a escola.",
+    type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "TheYep" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TheYep",
+    description: "Uma rede simples para a escola.",
+    images: ["/og.png"],
   },
 };
 
@@ -51,9 +65,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const themeClass = theme === "dark" ? "dark" : "";
 
   return (
-    <html lang="pt-BR" className={`${nunito.variable} ${themeClass}`.trim()} suppressHydrationWarning>
+    <html
+      lang="pt-BR"
+      className={`${nunito.variable} ${themeClass}`.trim()}
+      suppressHydrationWarning
+    >
       <body className="font-sans antialiased">
-        <script id="theyep-theme" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: themeInit }} />
+        <script
+          id="theyep-theme"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: themeInit }}
+        />
         <Shell>{children}</Shell>
       </body>
     </html>

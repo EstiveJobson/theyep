@@ -37,11 +37,14 @@ The database already has the schools table and the photo buckets (`avatars` and 
 
 Brand colors: pink `#F06292`, blue `#42A5F5` and yellow `#FFD54F`.
 
+Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable masters that need Luckiest Guy). The font file is not part of the app; the UI stays on Nunito. The header uses the soft burst, because the sharp one turns to noise at that size: the color mark in the light theme and the dark-background mark (white halo, for `#212121`) in the dark theme. Home-screen icons and the 1200×630 share image (`public/og.png`) are exports of the Y icon and the bold burst.
+
 ## Project structure
 
 ```
 .
-├── public/                  # icons, favicon, OG image and manifest.webmanifest (PWA)
+├── brand/                   # logo SVGs (outlined and editable) and the Luckiest Guy license
+├── public/                  # icons, favicon, og.png and manifest.webmanifest (PWA)
 ├── src/
 │   ├── app/                 # routes (App Router)
 │   │   ├── layout.tsx       # root layout, font, theme and metadata

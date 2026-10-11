@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Theme toggle sets .dark on <html>. Tailwind's built-in dark: follows the OS,
+   which would flash the wrong logo when the choice and the system disagree. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --bg: #ffffff;
   --fg: #1a1a1a;
