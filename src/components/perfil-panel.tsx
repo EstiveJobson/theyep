@@ -215,7 +215,10 @@ export function PerfilPanel() {
         <p className="mt-4 text-sm">{bio || "Sem bio ainda."}</p>
         {when ? <p className="mt-2 text-sm text-muted">{when}</p> : null}
         {error ? (
-          <p role="alert" className="mt-4 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
+          <p
+            role="alert"
+            className="mt-4 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          >
             {error}
           </p>
         ) : null}
@@ -233,8 +236,26 @@ export function PerfilPanel() {
 
   return (
     <section className="card p-4">
+      <div className="mb-3 flex justify-center">
+        <img
+          src="/logo-burst-soft.svg"
+          alt="TheYep"
+          width={970}
+          height={836}
+          className="w-28 dark:hidden"
+        />
+        <img
+          src="/logo-dark-burst-soft.svg"
+          alt="TheYep"
+          width={970}
+          height={836}
+          className="hidden w-28 dark:block"
+        />
+      </div>
       <h1 className="text-lg font-extrabold">{mode === "entrar" ? "Entrar" : "Criar conta"}</h1>
-      <p className="mt-1 text-sm text-muted">Entre com seu e-mail e senha.</p>
+      <p className="mt-1 text-sm text-muted">
+        {mode === "entrar" ? "Entre com seu e-mail e senha." : "Crie sua conta com e-mail e senha."}
+      </p>
       {!configured ? (
         <p className="mt-3 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
           O login por e-mail ainda não está ligado. Falta configurar o Supabase.
@@ -281,12 +302,18 @@ export function PerfilPanel() {
           </label>
         ) : null}
         {error ? (
-          <p role="alert" className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
+          <p
+            role="alert"
+            className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          >
             {error}
           </p>
         ) : null}
         {notice ? (
-          <p role="status" className="rounded-lg bg-blue px-3 py-2 text-sm font-semibold text-on-accent">
+          <p
+            role="status"
+            className="rounded-lg bg-blue px-3 py-2 text-sm font-semibold text-on-accent"
+          >
             {notice}
           </p>
         ) : null}

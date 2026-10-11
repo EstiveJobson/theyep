@@ -105,14 +105,14 @@ export function Shell({ children }: { children: ReactNode }) {
               alt="TheYep"
               width={970}
               height={836}
-              className="h-12 w-auto dark:hidden"
+              className="h-[52px] w-auto dark:hidden"
             />
             <img
               src="/logo-dark-burst-soft.svg"
               alt="TheYep"
               width={970}
               height={836}
-              className="hidden h-12 w-auto dark:block"
+              className="hidden h-[52px] w-auto dark:block"
             />
           </Link>
           <div className="flex items-center gap-1">
