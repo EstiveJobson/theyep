@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { isOwnPhotoPath, isUuid } from "@/lib/ids";
 import { cleanCursor, type FeedCursor } from "@/lib/feed-cursor";
+import { mapPostRow, type PostRow } from "@/lib/map-post";
 import { getViewer } from "@/lib/viewer";
 
 export type { FeedCursor };
@@ -14,6 +15,9 @@ export type FeedPost = {
   photoMissing: boolean;
   createdAt: string;
   schoolShortName: string | null;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
   author: {
     id: string;
     name: string;
@@ -21,22 +25,32 @@ export type FeedPost = {
   };
 };
 
-type FeedRow = {
-  id: string;
-  author_id: string;
-  text: string | null;
-  photo_path: string | null;
-  created_at: string;
-  author_name: string;
-  avatar_url: string | null;
-  school_short_name: string | null;
-};
-
 const PAGE = 20;
 const SIGNED_URL_SECONDS = 900;
 
 function charCount(value: string): number {
   return [...value].length;
+}
+
+async function withSignedPhotos(
+  supabase: NonNullable<Awaited<ReturnType<typeof getViewer>>["supabase"]>,
+  rows: PostRow[],
+) {
+  const paths = rows.map((row) => row.photo_path).filter((path): path is string => Boolean(path));
+  const signed = new Map<string, string>();
+  if (paths.length === 0) return rows.map((row) => mapPostRow(row, signed));
+
+  const { data: files } = await supabase.storage
+    .from("post-photos")
+    .createSignedUrls(paths, SIGNED_URL_SECONDS);
+  for (const [index, file] of (files ?? []).entries()) {
+    if (!file.signedUrl) continue;
+    const key = file.path || paths[index];
+    if (key) signed.set(key, file.signedUrl);
+    const requested = paths[index];
+    if (requested) signed.set(requested, file.signedUrl);
+  }
+  return rows.map((row) => mapPostRow(row, signed));
 }
 
 export async function loadFeed(input: {
@@ -68,38 +82,9 @@ export async function loadFeed(input: {
 
   if (error) return { ok: false, error: "Não foi possível carregar os posts." };
 
-  const rows = ((data ?? []) as FeedRow[]).slice(0, PAGE + 1);
+  const rows = ((data ?? []) as PostRow[]).slice(0, PAGE + 1);
   const page = rows.slice(0, PAGE);
-  const paths = page.map((row) => row.photo_path).filter((path): path is string => Boolean(path));
-  const signed = new Map<string, string>();
-
-  if (paths.length > 0) {
-    const { data: files } = await supabase.storage
-      .from("post-photos")
-      .createSignedUrls(paths, SIGNED_URL_SECONDS);
-    for (const [index, file] of (files ?? []).entries()) {
-      if (!file.signedUrl) continue;
-      const key = file.path || paths[index];
-      if (key) signed.set(key, file.signedUrl);
-      const requested = paths[index];
-      if (requested) signed.set(requested, file.signedUrl);
-    }
-  }
-
-  const posts: FeedPost[] = page.map((row) => ({
-    id: row.id,
-    text: row.text,
-    photoUrl: row.photo_path ? (signed.get(row.photo_path) ?? null) : null,
-    photoMissing: Boolean(row.photo_path) && !signed.has(row.photo_path ?? ""),
-    createdAt: row.created_at,
-    schoolShortName: row.school_short_name,
-    author: {
-      id: row.author_id,
-      name: row.author_name?.trim() || "Sem nome",
-      avatarUrl: row.avatar_url,
-    },
-  }));
-
+  const posts = await withSignedPhotos(supabase, page);
   const last = posts.length === PAGE ? page[PAGE - 1] : null;
   const nextCursor =
     rows.length > PAGE && last ? { createdAt: last.created_at, id: last.id } : null;
@@ -175,5 +160,6 @@ export async function deletePost(id: string): Promise<{ ok: true } | { ok: false
   }
 
   revalidatePath("/");
+  revalidatePath(`/post/${id}`);
   return { ok: true };
 }

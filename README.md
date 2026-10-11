@@ -18,12 +18,13 @@ TheYep is a lightweight social network for school communities: you sign up with 
 - PWA: manifest and icons for installing to the home screen
 - Posts with text (up to 500 characters) and/or one photo. A post can go to the general feed, the campus feed, or both. Campus is available only when the profile has a school
 - General feed and campus feed on the home screen, newest first, 20 posts per page
-- Delete your own post, which also removes its photo
-- Database with Row Level Security: each user can only create and edit their own profile, publish as themselves, and upload files to their own folder. Campus posts and their photos are visible only to people at that school. Post photos live in a private bucket and are shown with short-lived signed URLs
+- Delete your own post, which also removes its photo, likes and comments
+- Like a post once. The heart is filled pink when it's yours, with the count beside it. A second tap removes the like
+- Comments on the post page (`/post/[id]`), up to 300 characters, oldest first. The card says “1 comentário” or “X comentários”. You can delete your own comment, and the post's author can delete any comment on it
+- Database with Row Level Security: each user can only create and edit their own profile, publish as themselves, and upload files to their own folder. Campus posts, their photos, likes and comments are visible only to people at that school. Post photos live in a private bucket and are shown with short-lived signed URLs
 
 ### In progress (v1 scope)
 
-- Likes and comments
 - Deleting your own account
 
 Campus uses `profiles.school_id`. A person can choose a school only once, through `set_my_school`, and only while the field is empty. The profile screen does not offer that choice yet, so a profile with no school only sees Geral. A direct update of `school_id` is rejected.
@@ -50,6 +51,7 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
 │   ├── app/                 # routes (App Router)
 │   │   ├── layout.tsx       # root layout, font, theme and metadata
 │   │   ├── page.tsx         # /        Home (feed)
+│   │   ├── post/            # /post/[id]  Post, likes and comments
 │   │   ├── postar/          # /postar  Post
 │   │   ├── perfil/          # /perfil  Login, sign-up and profile
 │   │   ├── error.tsx
@@ -60,6 +62,7 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
 │   │   ├── supabase/        # Supabase clients (browser, server and middleware)
 │   │   └── relative-time.ts
 │   ├── server/posts.ts      # feed, create and delete
+│   ├── server/engagement.ts # likes, comments and the post page
 │   └── middleware.ts        # refreshes the Supabase session on every request
 ├── supabase/migrations/     # database SQL (tables, RLS, trigger and buckets)
 ├── .env.example             # required environment variables
@@ -101,12 +104,18 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
    1. [`supabase/migrations/0001_foundation.sql`](supabase/migrations/0001_foundation.sql) once. Before that, replace `[ESCOLA_1]`, `[ESCOLA_2]` and `[ESCOLA_3]` with real schools.
    2. [`supabase/migrations/0002_posts.sql`](supabase/migrations/0002_posts.sql) once. It creates `posts` and makes `post-photos` private (2 MB, JPEG/PNG/WebP).
    3. [`supabase/migrations/0003_security_fixes.sql`](supabase/migrations/0003_security_fixes.sql) once. It stops users from changing `school_id` (only `name`, `bio` and `avatar_url` stay editable), forces each post's id and time on the server, drops in-place replacement of post photos, and lets the owner delete an upload that never became a post. `set_my_school` can set the school once while it is still empty.
+   4. [`supabase/migrations/0004_likes_comments.sql`](supabase/migrations/0004_likes_comments.sql) once. It adds `likes` (one per person per post) and `comments` (1 to 300 characters). Both follow the same visibility as the post: Geral, or Campus for your own school. You can delete your own like. You can delete a comment you wrote, and the author of the post can delete any comment on it. Deleting a post or a profile removes the related likes and comments. It also replaces `list_posts` so the feed returns the like count, the comment count and whether you liked the post in the same query.
 
-   If you use the Supabase CLI, `supabase db push` runs the same files in order. Do not re-run `0001` after this. Its bucket section makes `post-photos` public again, and its grants let `authenticated` update every profile column, including `school_id`, and restore the photo replace policy. If you do re-run it, run `0002` and then `0003` again.
+   If you use the Supabase CLI, `supabase db push` runs the same files in order. Do not re-run `0001` after this. Its bucket section makes `post-photos` public again, and its grants let `authenticated` update every profile column, including `school_id`, and restore the photo replace policy. If you do re-run it, run `0002`, then `0003`, then `0004` again.
 
 5. In **Storage**, confirm `post-photos` exists and the public toggle is off. `avatars` stays public. There should be no update policy on `post-photos`.
 
-6. Optional check for the school lock: in the SQL Editor, run [`supabase/tests/school_lock.sql`](supabase/tests/school_lock.sql) after `0003`. It acts as an authenticated user and rolls back, so it leaves no rows. You should see notices that a direct `school_id` update is blocked, an inactive school is rejected, `set_my_school` works once, a second call fails, updating `name` and `bio` still works, and the trigger still blocks `school_id` even if that column is granted. A line starting with `FAIL:` means the check did not pass. With `psql` or the CLI: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/school_lock.sql`.
+6. Optional checks, in the SQL Editor (each script rolls back, so it leaves no rows). A line starting with `FAIL:` means that check did not pass.
+
+   - [`supabase/tests/school_lock.sql`](supabase/tests/school_lock.sql) after `0003`. A direct `school_id` update is blocked, an inactive school is rejected, `set_my_school` works once, a second call fails, updating `name` and `bio` still works, and the trigger still blocks `school_id` even if that column is granted.
+   - [`supabase/tests/likes_comments.sql`](supabase/tests/likes_comments.sql) after `0004`. Two schools and three users: the other school cannot see, like or comment on a Campus post; a like is unique; the comment length is 1 to 300 characters; the author of a comment can delete it; the author of the post can delete someone else's comment; a third person cannot; deleting the post or the profile removes likes and comments.
+
+   With `psql` or the CLI: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/school_lock.sql` and the same for `supabase/tests/likes_comments.sql`.
 
 7. Start the development server:
 

@@ -114,11 +114,13 @@ export function Composer({ campusLabel }: { campusLabel: string | null }) {
     try {
       if (photo) {
         const path = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
-        const { error: uploadError } = await supabase.storage.from("post-photos").upload(path, photo.blob, {
-          contentType: "image/jpeg",
-          cacheControl: "3600",
-          upsert: false,
-        });
+        const { error: uploadError } = await supabase.storage
+          .from("post-photos")
+          .upload(path, photo.blob, {
+            contentType: "image/jpeg",
+            cacheControl: "3600",
+            upsert: false,
+          });
         if (uploadError) {
           setError(uploadMessage(uploadError.message));
           return;
@@ -147,7 +149,9 @@ export function Composer({ campusLabel }: { campusLabel: string | null }) {
     } finally {
       if (uploadedPath && !published) {
         try {
-          const { error: removeError } = await supabase.storage.from("post-photos").remove([uploadedPath]);
+          const { error: removeError } = await supabase.storage
+            .from("post-photos")
+            .remove([uploadedPath]);
           if (removeError) console.error("orphan photo delete failed", removeError.message);
         } catch (removeError) {
           console.error("orphan photo delete failed", removeError);

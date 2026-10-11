@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
+import { AuthorPosts } from "@/components/author-posts";
 import { isUuid } from "@/lib/ids";
 import { joinedLabel } from "@/lib/relative-time";
 import { firstRelation } from "@/lib/relation";
 import { createClient } from "@/lib/supabase/server";
+import { getViewer } from "@/lib/viewer";
 
 type ProfileRow = {
   id: string;
@@ -44,33 +46,37 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   const profile = data as ProfileRow | null;
   if (!profile) notFound();
 
+  const { user } = await getViewer();
   const name = profile.name.trim() || "Sem nome";
   const school = firstRelation(profile.schools)?.short_name?.trim() || "";
   const when = profile.created_at ? joinedLabel(profile.created_at) : "";
 
   return (
-    <section className="card p-4">
-      <div className="flex items-center gap-3">
-        {profile.avatar_url ? (
-          <img
-            src={profile.avatar_url}
-            alt={name === "Sem nome" ? "Foto do perfil" : `Foto de ${name}`}
-            className="size-16 rounded-full object-cover"
-          />
-        ) : (
-          <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
-            {(name.charAt(0) || "Y").toUpperCase()}
-          </span>
-        )}
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-extrabold">{name}</h1>
-          {school ? <p className="truncate text-sm text-muted">{school}</p> : null}
+    <div className="space-y-3">
+      <section className="card p-4">
+        <div className="flex items-center gap-3">
+          {profile.avatar_url ? (
+            <img
+              src={profile.avatar_url}
+              alt={name === "Sem nome" ? "Foto do perfil" : `Foto de ${name}`}
+              className="size-16 rounded-full object-cover"
+            />
+          ) : (
+            <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
+              {(name.charAt(0) || "Y").toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-extrabold">{name}</h1>
+            {school ? <p className="truncate text-sm text-muted">{school}</p> : null}
+          </div>
         </div>
-      </div>
-      <p className="mt-4 whitespace-pre-wrap break-words text-sm">
-        {profile.bio.trim() || "Sem bio ainda."}
-      </p>
-      {when ? <p className="mt-2 text-sm text-muted">{when}</p> : null}
-    </section>
+        <p className="mt-4 whitespace-pre-wrap break-words text-sm">
+          {profile.bio.trim() || "Sem bio ainda."}
+        </p>
+        {when ? <p className="mt-2 text-sm text-muted">{when}</p> : null}
+      </section>
+      {user ? <AuthorPosts authorId={profile.id} viewerId={user.id} /> : null}
+    </div>
   );
 }

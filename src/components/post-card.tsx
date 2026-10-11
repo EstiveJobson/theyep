@@ -1,11 +1,13 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
+import { Heart, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { commentLabel, nextLikeCount } from "@/lib/engagement-rules";
 import { formatRelativePt } from "@/lib/relative-time";
 import type { FeedPost } from "@/server/posts";
 import { deletePost } from "@/server/posts";
+import { toggleLike } from "@/server/engagement";
 
 function initialOf(name: string): string {
   return (name.trim().charAt(0) || "Y").toUpperCase();
@@ -15,20 +17,37 @@ export function PostCard({
   post,
   own,
   onDeleted,
+  linkComments = true,
 }: {
   post: FeedPost;
   own: boolean;
   onDeleted: (id: string) => void;
+  linkComments?: boolean;
 }) {
   const [menu, setMenu] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [liked, setLiked] = useState(post.likedByMe);
+  const [likeCount, setLikeCount] = useState(post.likeCount);
+  const [commentCount, setCommentCount] = useState(post.commentCount);
+  const [likePending, setLikePending] = useState(false);
+  const likeLock = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const time = formatRelativePt(post.createdAt);
   const meta = [post.schoolShortName, time].filter(Boolean).join(" · ");
+  const commentsLabel = commentLabel(commentCount);
+
+  useEffect(() => {
+    setCommentCount(post.commentCount);
+  }, [post.commentCount]);
+
+  useEffect(() => {
+    setLiked(post.likedByMe);
+    setLikeCount(post.likeCount);
+  }, [post.id, post.likedByMe, post.likeCount]);
 
   useEffect(() => {
     if (!menu) return;
@@ -76,6 +95,36 @@ export function PostCard({
       return;
     }
     onDeleted(post.id);
+  }
+
+  async function onLike() {
+    if (likeLock.current) return;
+    likeLock.current = true;
+    setLikePending(true);
+    setError("");
+    const next = !liked;
+    const prevLiked = liked;
+    const prevCount = likeCount;
+    setLiked(next);
+    setLikeCount(nextLikeCount(prevCount, next));
+    const likeError = next
+      ? "Não foi possível curtir. Tente de novo."
+      : "Não foi possível desfazer a curtida. Tente de novo.";
+    try {
+      const result = await toggleLike(post.id, next);
+      if (!result.ok) {
+        setLiked(prevLiked);
+        setLikeCount(prevCount);
+        setError(likeError);
+      }
+    } catch {
+      setLiked(prevLiked);
+      setLikeCount(prevCount);
+      setError(likeError);
+    } finally {
+      likeLock.current = false;
+      setLikePending(false);
+    }
   }
 
   return (
@@ -175,15 +224,42 @@ export function PostCard({
       {post.photoMissing ? (
         <p className="mt-3 text-sm text-muted">Não foi possível carregar a foto.</p>
       ) : null}
+      <div className="mt-2 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => void onLike()}
+          disabled={likePending}
+          aria-pressed={liked}
+          aria-label={liked ? "Descurtir" : "Curtir"}
+          className="inline-flex h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-bold disabled:opacity-60"
+        >
+          <Heart
+            className={liked ? "size-5 fill-pink text-pink" : "size-5 fill-none text-fg"}
+            aria-hidden
+          />
+          <span>{likeCount}</span>
+        </button>
+        {linkComments ? (
+          <Link
+            href={`/post/${post.id}`}
+            className="inline-flex h-11 items-center rounded-lg px-2 text-sm font-bold text-muted"
+          >
+            {commentsLabel}
+          </Link>
+        ) : (
+          <span className="inline-flex h-11 items-center px-2 text-sm font-bold text-muted">
+            {commentsLabel}
+          </span>
+        )}
+      </div>
       {error ? (
         <p
           role="alert"
-          className="mt-3 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          className="mt-2 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
         >
           {error}
         </p>
       ) : null}
-      <div className="mt-3 min-h-8" aria-hidden="true" />
       {photoOpen && post.photoUrl ? (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4"
