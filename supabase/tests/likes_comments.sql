@@ -301,7 +301,16 @@ declare
     chr(8203),
     chr(65279),
     chr(160),
-    chr(8203) || chr(8204) || chr(8205) || chr(8288) || chr(65279) || chr(160)
+    chr(8239),
+    chr(173),
+    chr(12644),
+    chr(10240),
+    chr(4447),
+    chr(4448),
+    chr(65440),
+    chr(6158),
+    chr(8203) || chr(8204) || chr(8205) || chr(8288) || chr(65279) || chr(160),
+    chr(8239) || chr(173) || chr(12644) || chr(10240) || chr(4447) || chr(4448) || chr(65440) || chr(6158)
   ];
   comments int;
 begin
@@ -325,6 +334,41 @@ begin
     raise exception 'FAIL: rejected invisible comments changed comment_count to %', comments;
   end if;
   raise notice 'ok: invisible comments rejected';
+end $$;
+
+do $$
+declare
+  family text := chr(128104) || chr(8205) || chr(128105) || chr(8205) || chr(128103);
+  flag text := chr(127987) || chr(65039) || chr(8205) || chr(127752);
+  new_id uuid;
+  got text;
+  comments int;
+begin
+  insert into public.comments (post_id, text)
+  values (current_setting('app.general_post')::uuid, family)
+  returning id into new_id;
+  select text into got from public.comments where id = new_id;
+  if got is distinct from family then
+    raise exception 'FAIL: family emoji was not stored unchanged';
+  end if;
+  delete from public.comments where id = new_id;
+
+  insert into public.comments (post_id, text)
+  values (current_setting('app.general_post')::uuid, flag)
+  returning id into new_id;
+  select text into got from public.comments where id = new_id;
+  if got is distinct from flag then
+    raise exception 'FAIL: flag emoji was not stored unchanged';
+  end if;
+  delete from public.comments where id = new_id;
+
+  select comment_count into comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if comments <> 1 then
+    raise exception 'FAIL: emoji round-trip changed comment_count to %', comments;
+  end if;
+  raise notice 'ok: composed emoji stored unchanged';
 end $$;
 
 do $$

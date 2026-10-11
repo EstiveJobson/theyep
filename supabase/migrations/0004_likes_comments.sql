@@ -20,7 +20,7 @@ create table if not exists public.comments (
   created_at timestamptz not null default now(),
   constraint comments_text_len check (
     char_length(text) <= 300
-    and char_length(regexp_replace(text, '[\s\u00a0\u200b-\u200d\u2060\ufeff]', '', 'g')) >= 1
+    and char_length(regexp_replace(text, '[\s\u00a0\u200b-\u200d\u2060\ufeff\u202f\u00ad\u3164\u2800\u115f\u1160\uffa0\u180e]', '', 'g')) >= 1
   )
 );
 
@@ -119,7 +119,7 @@ create trigger comments_before_insert
 alter table public.comments drop constraint if exists comments_text_len;
 alter table public.comments add constraint comments_text_len check (
   char_length(text) <= 300
-  and char_length(regexp_replace(text, '[\s\u00a0\u200b-\u200d\u2060\ufeff]', '', 'g')) >= 1
+  and char_length(regexp_replace(text, '[\s\u00a0\u200b-\u200d\u2060\ufeff\u202f\u00ad\u3164\u2800\u115f\u1160\uffa0\u180e]', '', 'g')) >= 1
 );
 
 -- Counts live on the post so the feed does not call can_read_post() once per like.
