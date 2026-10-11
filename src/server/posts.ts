@@ -5,6 +5,7 @@ import { isOwnPhotoPath, isUuid } from "@/lib/ids";
 import { cleanCursor, type FeedCursor } from "@/lib/feed-cursor";
 import { mapPostRow, type PostRow } from "@/lib/map-post";
 import { getViewer } from "@/lib/viewer";
+import type { FeedTab } from "@/lib/feed-tab";
 
 export type { FeedCursor };
 
@@ -54,10 +55,11 @@ async function withSignedPhotos(
 }
 
 export async function loadFeed(input: {
-  tab: "geral" | "campus";
+  tab: FeedTab;
   cursor?: FeedCursor | null;
 }): Promise<
-  { ok: true; posts: FeedPost[]; nextCursor: FeedCursor | null } | { ok: false; error: string }
+  | { ok: true; posts: FeedPost[]; nextCursor: FeedCursor | null; followsNobody: boolean }
+  | { ok: false; error: string }
 > {
   const { supabase, user, school } = await getViewer();
   if (!supabase) {
@@ -65,7 +67,8 @@ export async function loadFeed(input: {
   }
   if (!user) return { ok: false, error: "Entre para ver os posts." };
 
-  const tab = input.tab === "campus" ? "campus" : "geral";
+  const tab: FeedTab =
+    input.tab === "campus" ? "campus" : input.tab === "seguindo" ? "seguindo" : "geral";
   if (tab === "campus" && !school) return { ok: false, error: "Sua conta não tem escola." };
 
   if (input.cursor && !cleanCursor(input.cursor)) {
@@ -89,7 +92,16 @@ export async function loadFeed(input: {
   const nextCursor =
     rows.length > PAGE && last ? { createdAt: last.created_at, id: last.id } : null;
 
-  return { ok: true, posts, nextCursor };
+  let followsNobody = false;
+  if (tab === "seguindo" && !cursor && page.length === 0) {
+    const { count, error: countError } = await supabase
+      .from("follows")
+      .select("following_id", { count: "exact", head: true })
+      .eq("follower_id", user.id);
+    if (!countError && count === 0) followsNobody = true;
+  }
+
+  return { ok: true, posts, nextCursor, followsNobody };
 }
 
 export async function createPost(input: {

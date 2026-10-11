@@ -7,6 +7,9 @@ import type { FeedCursor, FeedPost } from "@/server/posts";
 import { loadFeed } from "@/server/posts";
 import { PostCard } from "@/components/post-card";
 
+const NOBODY_FOLLOWS =
+  "Você ainda não segue ninguém. Toque no nome de alguém num post do Geral para ver o perfil e seguir.";
+
 export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel: string | null }) {
   const [tab, setTab] = useState<FeedTab | null>(null);
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -16,6 +19,7 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
   const [error, setError] = useState("");
   const [moreError, setMoreError] = useState("");
   const [reload, setReload] = useState(0);
+  const [followsNobody, setFollowsNobody] = useState(false);
   const request = useRef(0);
   const loadingMoreRef = useRef(false);
   const sentinel = useRef<HTMLButtonElement>(null);
@@ -34,6 +38,7 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
     setMoreError("");
     setPosts([]);
     setCursor(null);
+    setFollowsNobody(false);
     void loadFeed({ tab, cursor: null }).then((result) => {
       if (id !== request.current) return;
       setLoading(false);
@@ -43,6 +48,7 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
       }
       setPosts(result.posts);
       setCursor(result.nextCursor);
+      setFollowsNobody(result.followsNobody);
     });
   }, [tab, reload]);
 
@@ -97,7 +103,7 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
         <div
           role="tablist"
           aria-label="Feeds"
-          className="grid grid-cols-2 gap-1 rounded-lg bg-line p-1"
+          className="grid grid-cols-3 gap-1 rounded-lg bg-line p-1"
         >
           <TabButton selected={tab === "geral"} onClick={() => choose("geral")}>
             Geral
@@ -105,8 +111,24 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
           <TabButton selected={tab === "campus"} onClick={() => choose("campus")}>
             {campusLabel}
           </TabButton>
+          <TabButton selected={tab === "seguindo"} onClick={() => choose("seguindo")}>
+            Seguindo
+          </TabButton>
         </div>
-      ) : null}
+      ) : (
+        <div
+          role="tablist"
+          aria-label="Feeds"
+          className="grid grid-cols-2 gap-1 rounded-lg bg-line p-1"
+        >
+          <TabButton selected={tab === "geral"} onClick={() => choose("geral")}>
+            Geral
+          </TabButton>
+          <TabButton selected={tab === "seguindo"} onClick={() => choose("seguindo")}>
+            Seguindo
+          </TabButton>
+        </div>
+      )}
       {loading ? (
         <div className="space-y-3" aria-busy="true" aria-label="Carregando posts">
           <Skeleton />
@@ -129,13 +151,19 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
       ) : null}
       {!loading && !error && posts.length === 0 ? (
         <section className="card px-6 py-10 text-center">
-          <h2 className="text-lg font-extrabold">
-            Ainda não tem nada aqui. Que tal fazer o{" "}
-            <Link href="/postar" className="text-blue-ink">
-              primeiro post
-            </Link>
-            ?
-          </h2>
+          {tab === "seguindo" && followsNobody ? (
+            <h2 className="text-lg font-extrabold">{NOBODY_FOLLOWS}</h2>
+          ) : tab === "seguindo" ? (
+            <h2 className="text-lg font-extrabold">Ainda não tem nada aqui.</h2>
+          ) : (
+            <h2 className="text-lg font-extrabold">
+              Ainda não tem nada aqui. Que tal fazer o{" "}
+              <Link href="/postar" className="text-blue-ink">
+                primeiro post
+              </Link>
+              ?
+            </h2>
+          )}
         </section>
       ) : null}
       {posts.map((post) => (
