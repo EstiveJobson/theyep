@@ -12,6 +12,8 @@ TheYep is a lightweight social network for school communities: you sign up with 
 
 - Sign up and log in with email and password (Supabase Auth)
 - Profile page with name, bio, photo (or the name's initial) and join date. The profile is created automatically on sign-up
+- Optional school on sign-up. The list is the active schools in the database, plus “Pular – não estudo em nenhuma dessas”. With e-mail confirmation on, the choice is saved as `pending_school_id` and applied with `set_my_school` on the first signed-in session. If a session already exists, it is applied immediately. An inactive school is skipped, and the person can choose later
+- “Escolher minha escola” on your own profile, only while the school is empty. Confirming calls `set_my_school` once. The button never appears on someone else's profile
 - Log out
 - Light and dark theme, following the system or chosen by the user
 - Mobile-first navigation: bottom tab bar on phones and top menu on desktop
@@ -27,7 +29,7 @@ TheYep is a lightweight social network for school communities: you sign up with 
 
 - Deleting your own account
 
-Campus uses `profiles.school_id`. A person can choose a school only once, through `set_my_school`, and only while the field is empty. The profile screen does not offer that choice yet, so a profile with no school only sees Geral. A direct update of `school_id` is rejected.
+Campus uses `profiles.school_id`. A person can choose a school only once, through `set_my_school`, and only while the field is empty. Sign-up and your own profile both call that function. They never write `school_id` directly, and `handle_new_user` still does not set a school. A direct update of `school_id` is rejected. Logged-out visitors can already read active schools: `0001` grants `anon` `select` and the policy “escolas ativas sao publicas” keeps the rows to `active = true`. The sign-up list asks only for `id`, `name` and `short_name`, so no new migration was added. A profile with no school only sees Geral.
 
 ## Tech stack
 
@@ -105,6 +107,8 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
    2. [`supabase/migrations/0002_posts.sql`](supabase/migrations/0002_posts.sql) once. It creates `posts` and makes `post-photos` private (2 MB, JPEG/PNG/WebP).
    3. [`supabase/migrations/0003_security_fixes.sql`](supabase/migrations/0003_security_fixes.sql) once. It stops users from changing `school_id` (only `name`, `bio` and `avatar_url` stay editable), forces each post's id and time on the server, drops in-place replacement of post photos, and lets the owner delete an upload that never became a post. `set_my_school` can set the school once while it is still empty.
    4. [`supabase/migrations/0004_likes_comments.sql`](supabase/migrations/0004_likes_comments.sql) once. It adds `likes` (one per person per post) and `comments` (1 to 300 characters). Both follow the same visibility as the post: Geral, or Campus for your own school. You can delete your own like. You can delete a comment you wrote, and the author of the post can delete any comment on it. Deleting a post or a profile removes the related likes and comments. It also replaces `list_posts` so the feed returns the like count, the comment count and whether you liked the post in the same query.
+
+   There is no fifth migration. The school picker reads active schools with the `anon` key, which `0001` already allows. In the app, a chosen school is stored only by calling `set_my_school`.
 
    If you use the Supabase CLI, `supabase db push` runs the same files in order. Do not re-run `0001` after this. Its bucket section makes `post-photos` public again, and its grants let `authenticated` update every profile column, including `school_id`, and restore the photo replace policy. If you do re-run it, run `0002`, then `0003`, then `0004` again.
 

@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
+import { applyPendingSchool } from "@/lib/pending-school";
+import { firstRelation } from "@/lib/relation";
+import { listActiveSchools, type SchoolOption } from "@/lib/schools";
 import { getBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { joinedLabel } from "@/lib/relative-time";
 
@@ -11,9 +15,14 @@ type Profile = {
   bio: string;
   avatar_url: string | null;
   created_at: string;
+  school_id: string | null;
+  schools: SchoolOption | SchoolOption[] | null;
 };
 
 type Mode = "entrar" | "criar";
+
+const fieldClass =
+  "mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 font-normal text-fg outline-none focus-visible:border-blue-ink";
 
 function authErrorMessage(message: string): string {
   const text = message.toLowerCase();
@@ -40,18 +49,30 @@ function initialOf(name: string, email: string): string {
   return (source.charAt(0) || "Y").toUpperCase();
 }
 
+function schoolLabel(profile: Profile | null): string {
+  return firstRelation(profile?.schools)?.short_name?.trim() ?? "";
+}
+
 export function PerfilPanel() {
+  const router = useRouter();
   const configured = isSupabaseConfigured();
   const [mode, setMode] = useState<Mode>("entrar");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [signupSchool, setSignupSchool] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [loading, setLoading] = useState(configured);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [schools, setSchools] = useState<SchoolOption[]>([]);
+  const [schoolsLoading, setSchoolsLoading] = useState(false);
+  const [schoolsError, setSchoolsError] = useState("");
+  const [pickingSchool, setPickingSchool] = useState(false);
+  const [schoolChoice, setSchoolChoice] = useState("");
+  const [savingSchool, setSavingSchool] = useState(false);
 
   useEffect(() => {
     if (!configured) return;
@@ -64,16 +85,19 @@ export function PerfilPanel() {
     let alive = true;
 
     async function load(nextUser: User | null) {
-      if (!alive) return;
+      if (!alive || !supabase) return;
       setUser(nextUser);
-      if (!nextUser || !supabase) {
+      if (!nextUser) {
         setProfile(null);
+        setPickingSchool(false);
         setLoading(false);
         return;
       }
+      const pendingResult = await applyPendingSchool(supabase, nextUser);
+      if (!alive) return;
       const { data, error: profileError } = await supabase
         .from("profiles")
-        .select("id, name, bio, avatar_url, created_at")
+        .select("id, name, bio, avatar_url, created_at, school_id, schools(id, name, short_name)")
         .eq("id", nextUser.id)
         .maybeSingle();
       if (!alive) return;
@@ -85,9 +109,11 @@ export function PerfilPanel() {
         setError("");
       }
       setLoading(false);
+      if (pendingResult === "applied") router.refresh();
     }
 
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (!alive) return;
       if (sessionError) {
         setError("Não foi possível conectar ao login.");
         setLoading(false);
@@ -104,7 +130,29 @@ export function PerfilPanel() {
       alive = false;
       subscription.subscription.unsubscribe();
     };
-  }, [configured]);
+  }, [configured, router]);
+
+  useEffect(() => {
+    if (!configured) return;
+    const showSignupList = mode === "criar" && !user;
+    if (!showSignupList && !pickingSchool) return;
+    const supabase = getBrowserClient();
+    if (!supabase) return;
+
+    let alive = true;
+    setSchoolsLoading(true);
+    setSchoolsError("");
+    void listActiveSchools(supabase).then((result) => {
+      if (!alive) return;
+      setSchools(result.schools);
+      setSchoolsError(result.error ?? "");
+      setSchoolsLoading(false);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [configured, mode, user, pickingSchool]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -141,23 +189,29 @@ export function PerfilPanel() {
 
     setPending(true);
     if (mode === "criar") {
+      const selected = schools.find((school) => school.id === signupSchool) ?? null;
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmed,
         password,
+        options: selected ? { data: { pending_school_id: selected.id } } : undefined,
       });
       setPending(false);
       if (signUpError) {
         setError(authErrorMessage(signUpError.message));
         return;
       }
-      if (!data.session) {
-        setNotice(
-          "Conta criada. Se a confirmação por e-mail estiver ligada, abra a mensagem que enviamos.",
-        );
-        setMode("entrar");
-        setPassword("");
-        setConfirm("");
+      if (data.session) {
+        const result = await applyPendingSchool(supabase, data.session.user);
+        if (result === "applied") router.refresh();
+        return;
       }
+      setNotice(
+        "Conta criada. Se a confirmação por e-mail estiver ligada, abra a mensagem que enviamos.",
+      );
+      setMode("entrar");
+      setPassword("");
+      setConfirm("");
+      setSignupSchool("");
       return;
     }
 
@@ -179,6 +233,53 @@ export function PerfilPanel() {
     if (signOutError) setError("Não foi possível sair. Tente de novo.");
   }
 
+  async function onChooseSchool(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const school = schools.find((item) => item.id === schoolChoice);
+    if (!school) return;
+
+    const supabase = getBrowserClient();
+    if (!supabase || !user) {
+      setError("Não foi possível salvar sua escola. Tente de novo.");
+      return;
+    }
+
+    setSavingSchool(true);
+    const { error: rpcError } = await supabase.rpc("set_my_school", { p_school: school.id });
+    if (rpcError) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, name, bio, avatar_url, created_at, school_id, schools(id, name, short_name)")
+        .eq("id", user.id)
+        .maybeSingle();
+      const next = (data as Profile | null) ?? null;
+      if (next?.school_id) {
+        setProfile(next);
+        setPickingSchool(false);
+        setSavingSchool(false);
+        router.refresh();
+        return;
+      }
+      setSavingSchool(false);
+      setError("Não foi possível salvar sua escola. Tente de novo.");
+      return;
+    }
+
+    setProfile((current) =>
+      current
+        ? {
+            ...current,
+            school_id: school.id,
+            schools: school,
+          }
+        : current,
+    );
+    setPickingSchool(false);
+    setSavingSchool(false);
+    router.refresh();
+  }
+
   if (loading) {
     return (
       <section className="card animate-pulse p-4" aria-busy="true" aria-label="Carregando perfil">
@@ -193,6 +294,9 @@ export function PerfilPanel() {
     const name = profile?.name?.trim() ?? "";
     const bio = profile?.bio?.trim() ?? "";
     const when = profile?.created_at ? joinedLabel(profile.created_at) : "";
+    const campus = schoolLabel(profile);
+    const canChooseSchool = Boolean(profile && !profile.school_id);
+    const chosen = schools.find((school) => school.id === schoolChoice) ?? null;
     return (
       <section className="card p-4">
         <div className="flex items-center gap-3">
@@ -210,10 +314,77 @@ export function PerfilPanel() {
           <div className="min-w-0">
             <h1 className="truncate text-lg font-extrabold">{name || "Sem nome"}</h1>
             <p className="truncate text-sm text-muted">{user.email}</p>
+            {campus ? <p className="truncate text-sm text-muted">{campus}</p> : null}
           </div>
         </div>
         <p className="mt-4 text-sm">{bio || "Sem bio ainda."}</p>
         {when ? <p className="mt-2 text-sm text-muted">{when}</p> : null}
+        {canChooseSchool && !pickingSchool ? (
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setSchoolChoice("");
+              setPickingSchool(true);
+            }}
+            className="mt-4 h-11 rounded-lg bg-pink px-4 text-sm font-extrabold text-on-accent"
+          >
+            Escolher minha escola
+          </button>
+        ) : null}
+        {canChooseSchool && pickingSchool ? (
+          <form className="mt-4 space-y-3" onSubmit={onChooseSchool}>
+            <label className="block text-sm font-semibold" htmlFor="profile-school">
+              Sua escola
+              <select
+                id="profile-school"
+                name="school"
+                value={schoolChoice}
+                onChange={(event) => setSchoolChoice(event.target.value)}
+                disabled={schoolsLoading || savingSchool}
+                className={fieldClass}
+              >
+                <option value="">Selecione sua escola</option>
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {schoolsLoading ? <p className="text-sm text-muted">Carregando escolas…</p> : null}
+            {schoolsError ? (
+              <p role="alert" className="text-sm font-semibold text-blue-ink">
+                {schoolsError}
+              </p>
+            ) : null}
+            {chosen ? (
+              <p className="text-sm text-muted">
+                Você vai entrar no campus da {chosen.name}. Depois de escolher, não dá para trocar.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={!chosen || savingSchool || schoolsLoading}
+                className="h-11 rounded-lg bg-pink px-4 text-sm font-extrabold text-on-accent disabled:opacity-60"
+              >
+                {savingSchool ? "Salvando…" : "Confirmar"}
+              </button>
+              <button
+                type="button"
+                disabled={savingSchool}
+                onClick={() => {
+                  setPickingSchool(false);
+                  setSchoolChoice("");
+                }}
+                className="h-11 rounded-lg border border-line px-4 text-sm font-bold text-blue-ink disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        ) : null}
         {error ? (
           <p
             role="alert"
@@ -225,7 +396,7 @@ export function PerfilPanel() {
         <button
           type="button"
           onClick={() => void signOut()}
-          disabled={pending}
+          disabled={pending || savingSchool}
           className="mt-4 h-11 rounded-lg border border-line px-4 text-sm font-bold text-blue-ink disabled:opacity-60"
         >
           {pending ? "Saindo…" : "Sair"}
@@ -272,7 +443,7 @@ export function PerfilPanel() {
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 font-normal text-fg outline-none focus-visible:border-blue-ink"
+            className={fieldClass}
           />
         </label>
         <label className="block text-sm font-semibold" htmlFor="password">
@@ -284,7 +455,7 @@ export function PerfilPanel() {
             autoComplete={mode === "criar" ? "new-password" : "current-password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 font-normal text-fg outline-none focus-visible:border-blue-ink"
+            className={fieldClass}
           />
         </label>
         {mode === "criar" ? (
@@ -297,9 +468,41 @@ export function PerfilPanel() {
               autoComplete="new-password"
               value={confirm}
               onChange={(event) => setConfirm(event.target.value)}
-              className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 font-normal text-fg outline-none focus-visible:border-blue-ink"
+              className={fieldClass}
             />
           </label>
+        ) : null}
+        {mode === "criar" ? (
+          <div>
+            <label className="block text-sm font-semibold" htmlFor="signup-school">
+              Sua escola
+              <select
+                id="signup-school"
+                name="school"
+                value={signupSchool}
+                onChange={(event) => setSignupSchool(event.target.value)}
+                aria-describedby="signup-school-help"
+                className={fieldClass}
+              >
+                <option value="">Pular – não estudo em nenhuma dessas</option>
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p id="signup-school-help" className="mt-1 text-sm text-muted">
+              Escolhendo uma escola, você também vê o feed do seu campus. Depois de escolher, não dá
+              para trocar.
+            </p>
+            {schoolsLoading ? <p className="mt-1 text-sm text-muted">Carregando escolas…</p> : null}
+            {schoolsError ? (
+              <p role="alert" className="mt-1 text-sm font-semibold text-blue-ink">
+                {schoolsError} Você ainda pode pular e escolher depois.
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {error ? (
           <p
@@ -333,6 +536,7 @@ export function PerfilPanel() {
           setError("");
           setNotice("");
           setConfirm("");
+          setSignupSchool("");
         }}
       >
         {mode === "entrar" ? "Não tem conta? Criar conta" : "Já tem conta? Entrar"}
