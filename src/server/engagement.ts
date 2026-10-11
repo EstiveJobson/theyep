@@ -109,7 +109,10 @@ async function loadCommentPage(
   supabase: NonNullable<Awaited<ReturnType<typeof getViewer>>["supabase"]>,
   postId: string,
   cursor: FeedCursor | null,
-): Promise<{ ok: true; comments: CommentItem[]; nextCursor: FeedCursor | null } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; comments: CommentItem[]; nextCursor: FeedCursor | null }
+  | { ok: false; error: string }
+> {
   const { data, error } = await supabase.rpc("list_comments", {
     p_post: postId,
     p_cursor_at: cursor?.createdAt ?? null,
@@ -126,13 +129,19 @@ async function loadCommentPage(
   return { ok: true, comments: page, nextCursor };
 }
 
-export async function loadPostPage(id: string): Promise<
+export async function loadPostPage(
+  id: string,
+): Promise<
   | { ok: true; post: FeedPost; comments: CommentItem[]; nextCursor: FeedCursor | null }
   | { ok: false; notFound: boolean; error: string }
 > {
   const { supabase, user } = await getViewer();
   if (!supabase) {
-    return { ok: false, notFound: false, error: "O feed ainda não está ligado. Falta configurar o Supabase." };
+    return {
+      ok: false,
+      notFound: false,
+      error: "O feed ainda não está ligado. Falta configurar o Supabase.",
+    };
   }
   if (!user) return { ok: false, notFound: false, error: "Entre para ver o post." };
   if (!isUuid(id)) return { ok: false, notFound: true, error: "Post não encontrado" };
@@ -153,7 +162,8 @@ export async function loadMoreComments(input: {
   postId: string;
   cursor: FeedCursor;
 }): Promise<
-  { ok: true; comments: CommentItem[]; nextCursor: FeedCursor | null } | { ok: false; error: string }
+  | { ok: true; comments: CommentItem[]; nextCursor: FeedCursor | null }
+  | { ok: false; error: string }
 > {
   const { supabase, user } = await getViewer();
   if (!supabase || !user) return { ok: false, error: "Entre para ver os comentários." };
@@ -173,7 +183,10 @@ export async function toggleLike(
   }
   if (!user) return { ok: false, error: "Entre para curtir." };
   if (!isUuid(postId)) {
-    return { ok: false, error: like ? "Não foi possível curtir." : "Não foi possível desfazer a curtida." };
+    return {
+      ok: false,
+      error: like ? "Não foi possível curtir." : "Não foi possível desfazer a curtida.",
+    };
   }
 
   if (like) {
@@ -182,7 +195,11 @@ export async function toggleLike(
       return { ok: false, error: "Não foi possível curtir. Tente de novo." };
     }
   } else {
-    const { error } = await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", user.id);
+    const { error } = await supabase
+      .from("likes")
+      .delete()
+      .eq("post_id", postId)
+      .eq("user_id", user.id);
     if (error) return { ok: false, error: "Não foi possível desfazer a curtida. Tente de novo." };
   }
 
@@ -239,7 +256,9 @@ export async function createComment(
   };
 }
 
-export async function deleteComment(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function deleteComment(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { supabase, user } = await getViewer();
   if (!supabase || !user) return { ok: false, error: "Entre para apagar." };
   if (!isUuid(id)) return { ok: false, error: "Não foi possível apagar esse comentário." };
@@ -251,7 +270,8 @@ export async function deleteComment(id: string): Promise<{ ok: true } | { ok: fa
     .maybeSingle();
 
   const comment = data as { id: string; user_id: string; post_id: string } | null;
-  if (readError || !comment) return { ok: false, error: "Não foi possível apagar esse comentário." };
+  if (readError || !comment)
+    return { ok: false, error: "Não foi possível apagar esse comentário." };
 
   const { data: post, error: postError } = await supabase
     .from("posts")
@@ -263,7 +283,11 @@ export async function deleteComment(id: string): Promise<{ ok: true } | { ok: fa
     return { ok: false, error: "Não foi possível apagar esse comentário." };
   }
 
-  const { data: removed, error } = await supabase.from("comments").delete().eq("id", id).select("id");
+  const { data: removed, error } = await supabase
+    .from("comments")
+    .delete()
+    .eq("id", id)
+    .select("id");
   if (error || !removed?.length) {
     return { ok: false, error: "Não foi possível apagar esse comentário." };
   }

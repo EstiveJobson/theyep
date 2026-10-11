@@ -84,7 +84,10 @@ export function AuthorPosts({ authorId, viewerId }: { authorId: string; viewerId
         />
       ))}
       {moreError ? (
-        <p role="alert" className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
+        <p
+          role="alert"
+          className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+        >
           {moreError}
         </p>
       ) : null}

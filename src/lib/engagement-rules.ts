@@ -18,12 +18,18 @@ export function commentLabel(count: number): string {
   return count === 1 ? "1 comentário" : `${count} comentários`;
 }
 
-export function isDuplicateLike(error: { code?: string; message?: string } | null | undefined): boolean {
+export function isDuplicateLike(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
   if (!error) return false;
   return error.code === "23505" || /duplicate key/i.test(error.message ?? "");
 }
 
-export function canDeleteComment(viewerId: string, commentUserId: string, postAuthorId: string): boolean {
+export function canDeleteComment(
+  viewerId: string,
+  commentUserId: string,
+  postAuthorId: string,
+): boolean {
   return viewerId === commentUserId || viewerId === postAuthorId;
 }
 

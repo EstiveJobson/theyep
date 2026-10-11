@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "preserve",
@@ -17,15 +13,10 @@
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
-    "types": [
-      "vite/client",
-      "node"
-    ],
+    "types": ["vite/client", "node"],
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     },
     "allowImportingTsExtensions": true,
     "incremental": true,
@@ -37,13 +28,6 @@
       }
     ]
   },
-  "include": [
-    ".next/types/**/*.ts",
-    "server",
-    "src",
-    ".next-build/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": [".next/types/**/*.ts", "server", "src", ".next-build/types/**/*.ts"],
+  "exclude": ["node_modules"]
 }

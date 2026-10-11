@@ -5,9 +5,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { PostCard } from "@/components/post-card";
-import { COMMENT_MAX, canDeleteComment, charCount, commentError, normalizeComment } from "@/lib/engagement-rules";
+import {
+  COMMENT_MAX,
+  canDeleteComment,
+  charCount,
+  commentError,
+  normalizeComment,
+} from "@/lib/engagement-rules";
 import { formatRelativePt } from "@/lib/relative-time";
-import { createComment, deleteComment, loadMoreComments, type CommentItem } from "@/server/engagement";
+import {
+  createComment,
+  deleteComment,
+  loadMoreComments,
+  type CommentItem,
+} from "@/server/engagement";
 import type { FeedCursor } from "@/lib/feed-cursor";
 import type { FeedPost } from "@/server/posts";
 
@@ -59,7 +70,9 @@ export function PostThread({
     bump(1);
     if (!cursor) {
       setComments((current) =>
-        current.some((item) => item.id === comment.id) ? current : [...current, comment].sort(byTime),
+        current.some((item) => item.id === comment.id)
+          ? current
+          : [...current, comment].sort(byTime),
       );
       return;
     }
@@ -144,7 +157,10 @@ export function PostThread({
           ))}
         </ul>
         {moreError ? (
-          <p role="alert" className="mt-3 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          >
             {moreError}
           </p>
         ) : null}
@@ -180,7 +196,11 @@ export function PostThread({
               value={text}
               onChange={(event) => {
                 const chars = [...event.target.value];
-                setText(chars.length > COMMENT_MAX ? chars.slice(0, COMMENT_MAX).join("") : event.target.value);
+                setText(
+                  chars.length > COMMENT_MAX
+                    ? chars.slice(0, COMMENT_MAX).join("")
+                    : event.target.value,
+                );
               }}
               placeholder="Escreva um comentário…"
               className="mt-1 w-full resize-y rounded-lg border border-line bg-bg px-3 py-2 font-normal text-fg outline-none focus-visible:border-blue-ink"
@@ -190,7 +210,10 @@ export function PostThread({
             {count}/300
           </p>
           {error ? (
-            <p role="alert" className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
+            <p
+              role="alert"
+              className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+            >
               {error}
             </p>
           ) : null}
@@ -334,7 +357,10 @@ function CommentRow({
         </div>
         <p className="whitespace-pre-wrap break-words text-[15px] leading-snug">{comment.text}</p>
         {error ? (
-          <p role="alert" className="mt-2 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent">
+          <p
+            role="alert"
+            className="mt-2 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          >
             {error}
           </p>
         ) : null}
