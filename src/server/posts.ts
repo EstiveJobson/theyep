@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { isOwnPhotoPath, isUuid } from "@/lib/ids";
+import { cleanCursor, type FeedCursor } from "@/lib/feed-cursor";
 import { getViewer } from "@/lib/viewer";
 
-export type FeedCursor = { createdAt: string; id: string };
+export type { FeedCursor };
 
 export type FeedPost = {
   id: string;
@@ -32,16 +33,10 @@ type FeedRow = {
 };
 
 const PAGE = 20;
+const SIGNED_URL_SECONDS = 900;
 
 function charCount(value: string): number {
   return [...value].length;
-}
-
-function cleanCursor(cursor: FeedCursor | null | undefined): FeedCursor | null {
-  if (!cursor) return null;
-  const time = new Date(cursor.createdAt);
-  if (Number.isNaN(time.getTime()) || !isUuid(cursor.id)) return null;
-  return { createdAt: time.toISOString(), id: cursor.id.toLowerCase() };
 }
 
 export async function loadFeed(input: {
@@ -81,7 +76,7 @@ export async function loadFeed(input: {
   if (paths.length > 0) {
     const { data: files } = await supabase.storage
       .from("post-photos")
-      .createSignedUrls(paths, 60 * 60 * 2);
+      .createSignedUrls(paths, SIGNED_URL_SECONDS);
     for (const [index, file] of (files ?? []).entries()) {
       if (!file.signedUrl) continue;
       const key = file.path || paths[index];
@@ -140,12 +135,10 @@ export async function createPost(input: {
   if (!toGeneral && !toCampus) return { ok: false, error: "Escolha onde publicar." };
 
   const { error } = await supabase.from("posts").insert({
-    author_id: user.id,
     text: text || null,
     photo_path: photoPath,
     to_general: toGeneral,
     to_campus: toCampus,
-    school_id: school?.id ?? null,
   });
 
   if (error) return { ok: false, error: "Não foi possível publicar. Tente de novo." };
@@ -170,17 +163,16 @@ export async function deletePost(id: string): Promise<{ ok: true } | { ok: false
     return { ok: false, error: "Não foi possível apagar esse post." };
   }
 
-  if (post.photo_path) {
-    const { error: storageError } = await supabase.storage
-      .from("post-photos")
-      .remove([post.photo_path]);
-    if (storageError && !/not found|does not exist/i.test(storageError.message)) {
-      return { ok: false, error: "Não foi possível apagar a foto. Tente de novo." };
-    }
-  }
-
+  const photoPath = post.photo_path;
   const { error } = await supabase.from("posts").delete().eq("id", id).eq("author_id", user.id);
   if (error) return { ok: false, error: "Não foi possível apagar esse post." };
+
+  if (photoPath) {
+    const { error: storageError } = await supabase.storage.from("post-photos").remove([photoPath]);
+    if (storageError) {
+      console.error("post photo delete failed", { postId: id, message: storageError.message });
+    }
+  }
 
   revalidatePath("/");
   return { ok: true };

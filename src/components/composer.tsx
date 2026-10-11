@@ -32,12 +32,12 @@ function uploadMessage(message: string): string {
   return "Não foi possível enviar a foto. Tente de novo.";
 }
 
-export function Composer({ schoolName }: { schoolName: string | null }) {
+export function Composer({ campusLabel }: { campusLabel: string | null }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   const [toGeneral, setToGeneral] = useState(true);
-  const [toCampus, setToCampus] = useState(Boolean(schoolName));
+  const [toCampus, setToCampus] = useState(Boolean(campusLabel));
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null);
   const [preparing, setPreparing] = useState(false);
   const [pending, setPending] = useState(false);
@@ -84,8 +84,8 @@ export function Composer({ schoolName }: { schoolName: string | null }) {
     if (preparing || pending) return;
 
     const body = text.trim();
-    const campus = Boolean(schoolName) && toCampus;
-    const general = schoolName ? toGeneral : true;
+    const campus = Boolean(campusLabel) && toCampus;
+    const general = campusLabel ? toGeneral : true;
     if (!body && !photo) {
       setError("Escreva algo ou escolha uma foto.");
       return;
@@ -109,40 +109,52 @@ export function Composer({ schoolName }: { schoolName: string | null }) {
       return;
     }
 
-    let photoPath: string | null = null;
-    if (photo) {
-      photoPath = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from("post-photos")
-        .upload(photoPath, photo.blob, {
+    let uploadedPath: string | null = null;
+    let published = false;
+    try {
+      if (photo) {
+        const path = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
+        const { error: uploadError } = await supabase.storage.from("post-photos").upload(path, photo.blob, {
           contentType: "image/jpeg",
           cacheControl: "3600",
           upsert: false,
         });
-      if (uploadError) {
-        setPending(false);
-        setError(uploadMessage(uploadError.message));
+        if (uploadError) {
+          setError(uploadMessage(uploadError.message));
+          return;
+        }
+        uploadedPath = path;
+      }
+
+      const result = await createPost({
+        text: body,
+        photoPath: uploadedPath,
+        toGeneral: general,
+        toCampus: campus,
+      });
+
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
+
+      published = true;
+      rememberFeedTab(general ? "geral" : "campus");
+      router.push("/");
+      router.refresh();
+    } catch {
+      setError("Não foi possível publicar. Tente de novo.");
+    } finally {
+      if (uploadedPath && !published) {
+        try {
+          const { error: removeError } = await supabase.storage.from("post-photos").remove([uploadedPath]);
+          if (removeError) console.error("orphan photo delete failed", removeError.message);
+        } catch (removeError) {
+          console.error("orphan photo delete failed", removeError);
+        }
+      }
+      if (!published) setPending(false);
     }
-
-    const result = await createPost({
-      text: body,
-      photoPath,
-      toGeneral: general,
-      toCampus: campus,
-    });
-
-    if (!result.ok) {
-      if (photoPath) await supabase.storage.from("post-photos").remove([photoPath]);
-      setPending(false);
-      setError(result.error);
-      return;
-    }
-
-    rememberFeedTab(general ? "geral" : "campus");
-    router.push("/");
-    router.refresh();
   }
 
   return (
@@ -204,14 +216,14 @@ export function Composer({ schoolName }: { schoolName: string | null }) {
           <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
             <input
               type="checkbox"
-              checked={schoolName ? toGeneral : true}
-              disabled={!schoolName}
+              checked={campusLabel ? toGeneral : true}
+              disabled={!campusLabel}
               onChange={(event) => setToGeneral(event.target.checked)}
               className="size-5 accent-pink disabled:opacity-60"
             />
             Geral
           </label>
-          {schoolName ? (
+          {campusLabel ? (
             <label className="flex min-h-11 items-center gap-3 text-sm font-semibold">
               <input
                 type="checkbox"
@@ -219,7 +231,7 @@ export function Composer({ schoolName }: { schoolName: string | null }) {
                 onChange={(event) => setToCampus(event.target.checked)}
                 className="size-5 accent-pink"
               />
-              Campus – {schoolName}
+              {campusLabel}
             </label>
           ) : null}
         </div>

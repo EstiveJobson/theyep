@@ -26,7 +26,7 @@ TheYep is a lightweight social network for school communities: you sign up with 
 - Likes and comments
 - Deleting your own account
 
-Campus uses `profiles.school_id`. The profile screen does not edit that field yet, so a profile with no school only sees Geral.
+Campus uses `profiles.school_id`. A person can choose a school only once, through `set_my_school`, and only while the field is empty. The profile screen does not offer that choice yet, so a profile with no school only sees Geral. A direct update of `school_id` is rejected.
 
 ## Tech stack
 
@@ -96,11 +96,19 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
 
    `NEXT_PUBLIC_SITE_URL` is optional. When set to an absolute URL (for example `https://theyep.example`), Open Graph and Twitter tags use it. If it is empty, the app uses `https://$VERCEL_URL` on Vercel, then `http://localhost:3000`.
 
-4. Set up the database: open the Supabase **SQL Editor** and run [`supabase/migrations/0001_foundation.sql`](supabase/migrations/0001_foundation.sql) once. Before that, replace the placeholder names `[ESCOLA_1]`, `[ESCOLA_2]` and `[ESCOLA_3]` with real schools. Then run [`supabase/migrations/0002_posts.sql`](supabase/migrations/0002_posts.sql) once. It creates `posts` and makes the `post-photos` bucket private (2 MB, JPEG/PNG/WebP). Do not re-run the bucket section of `0001` after that, or the bucket becomes public again — if you do, run `0002` again.
+4. Set up the database in the Supabase **SQL Editor**, in this order:
 
-5. In **Storage**, confirm `post-photos` exists and the public toggle is off. `avatars` stays public.
+   1. [`supabase/migrations/0001_foundation.sql`](supabase/migrations/0001_foundation.sql) once. Before that, replace `[ESCOLA_1]`, `[ESCOLA_2]` and `[ESCOLA_3]` with real schools.
+   2. [`supabase/migrations/0002_posts.sql`](supabase/migrations/0002_posts.sql) once. It creates `posts` and makes `post-photos` private (2 MB, JPEG/PNG/WebP).
+   3. [`supabase/migrations/0003_security_fixes.sql`](supabase/migrations/0003_security_fixes.sql) once. It stops users from changing `school_id` (only `name`, `bio` and `avatar_url` stay editable), forces each post's id and time on the server, drops in-place replacement of post photos, and lets the owner delete an upload that never became a post. `set_my_school` can set the school once while it is still empty.
 
-6. Start the development server:
+   If you use the Supabase CLI, `supabase db push` runs the same files in order. Do not re-run `0001` after this. Its bucket section makes `post-photos` public again, and its grants let `authenticated` update every profile column, including `school_id`, and restore the photo replace policy. If you do re-run it, run `0002` and then `0003` again.
+
+5. In **Storage**, confirm `post-photos` exists and the public toggle is off. `avatars` stays public. There should be no update policy on `post-photos`.
+
+6. Optional check for the school lock: in the SQL Editor, run [`supabase/tests/school_lock.sql`](supabase/tests/school_lock.sql) after `0003`. It acts as an authenticated user and rolls back, so it leaves no rows. You should see notices that a direct `school_id` update is blocked, an inactive school is rejected, `set_my_school` works once, a second call fails, updating `name` and `bio` still works, and the trigger still blocks `school_id` even if that column is granted. A line starting with `FAIL:` means the check did not pass. With `psql` or the CLI: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/school_lock.sql`.
+
+7. Start the development server:
 
    ```bash
    npm run dev

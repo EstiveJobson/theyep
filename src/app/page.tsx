@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Feed } from "@/components/feed";
+import { campusLabel } from "@/lib/campus-label";
 import { getViewer } from "@/lib/viewer";
 
 export default async function HomePage() {
@@ -29,5 +30,5 @@ export default async function HomePage() {
     );
   }
 
-  return <Feed viewerId={user.id} campusLabel={school ? `Campus – ${school.shortName}` : null} />;
+  return <Feed viewerId={user.id} campusLabel={school ? campusLabel(school.shortName) : null} />;
 }

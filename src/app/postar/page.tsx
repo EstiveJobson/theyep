@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Composer } from "@/components/composer";
+import { campusLabel } from "@/lib/campus-label";
 import { getViewer } from "@/lib/viewer";
 
 export default async function PostarPage() {
@@ -29,5 +30,5 @@ export default async function PostarPage() {
     );
   }
 
-  return <Composer schoolName={school?.name ?? null} />;
+  return <Composer campusLabel={school ? campusLabel(school.shortName) : null} />;
 }
