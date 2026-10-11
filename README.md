@@ -19,17 +19,20 @@ TheYep is a lightweight social network for school communities: you sign up with 
 - Mobile-first navigation: bottom tab bar on phones and top menu on desktop
 - PWA: manifest and icons for installing to the home screen
 - Posts with text (up to 500 characters) and/or one photo. A post can go to the general feed, the campus feed, or both. Campus is available only when the profile has a school
-- General feed and campus feed on the home screen, newest first, 20 posts per page
+- General feed, campus feed and following feed on the home screen, newest first, 20 posts per page
 - Delete your own post, which also removes its photo, likes and comments
 - Like a post once. The heart is filled pink when it's yours, with the count beside it. A second tap removes the like
 - Comments on the post page (`/post/[id]`), up to 300 characters, oldest first. The card says “1 comentário” or “X comentários”. You can delete your own comment, and the post's author can delete any comment on it
-- Database with Row Level Security: each user can only create and edit their own profile, publish as themselves, and upload files to their own folder. Campus posts, their photos, likes and comments are visible only to people at that school. Post photos live in a private bucket and are shown with short-lived signed URLs
+- Follow someone from their profile. The button says “Seguir” and then “Seguindo”. It never appears on your own profile. A person cannot follow themselves, and the same follow cannot be saved twice
+- “X seguidores” and “Y seguindo” on every profile while you are signed in. One follower is “1 seguidor”. The numbers are counted from the `follows` table, not stored. Each counter opens `/perfil/[id]/seguidores` or `/perfil/[id]/seguindo` (avatar, name and school, newest first, 20 per page)
+- A “Seguindo” tab on the home feed, beside Geral and Campus. It lists posts from people you follow: anything they sent to Geral, plus their Campus posts only when you are at the same school. Campus posts from another school stay hidden there and on that person's profile
+- Database with Row Level Security: each user can only create and edit their own profile, publish as themselves, follow as themselves, and upload files to their own folder. Campus posts, their photos, likes and comments are visible only to people at that school. Any signed-in user can read follows. Post photos live in a private bucket and are shown with short-lived signed URLs
 
 ### In progress (v1 scope)
 
-- Deleting your own account
+- Deleting your own account. The database already removes that person's follows in both directions when the auth user is deleted, because the profile cascades from the user and both follow columns cascade from the profile. There is still no button for it in the app
 
-Campus uses `profiles.school_id`. A person can choose a school only once, through `set_my_school`, and only while the field is empty. Sign-up and your own profile both call that function. They never write `school_id` directly, and `handle_new_user` still does not set a school. A direct update of `school_id` is rejected. Logged-out visitors can already read active schools: `0001` grants `anon` `select` and the policy “escolas ativas sao publicas” keeps the rows to `active = true`. The sign-up list asks only for `id`, `name` and `short_name`, so no new migration was added. A profile with no school only sees Geral.
+Campus uses `profiles.school_id`. A person can choose a school only once, through `set_my_school`, and only while the field is empty. Sign-up and your own profile both call that function. They never write `school_id` directly, and `handle_new_user` still does not set a school. A direct update of `school_id` is rejected. Logged-out visitors can already read active schools: `0001` grants `anon` `select` and the policy “escolas ativas sao publicas” keeps the rows to `active = true`. The sign-up list asks only for `id`, `name` and `short_name`, so the school picker did not need its own migration. A profile with no school sees Geral and Seguindo, not Campus.
 
 ## Tech stack
 
@@ -55,15 +58,16 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
 │   │   ├── page.tsx         # /        Home (feed)
 │   │   ├── post/            # /post/[id]  Post, likes and comments
 │   │   ├── postar/          # /postar  Post
-│   │   ├── perfil/          # /perfil  Login, sign-up and profile
+│   │   ├── perfil/          # /perfil, /perfil/[id], seguidores and seguindo
 │   │   ├── error.tsx
 │   │   ├── not-found.tsx
 │   │   └── globals.css      # theme and colors
-│   ├── components/          # Shell, feed, composer and profile
+│   ├── components/          # Shell, feed, composer, profile and follows
 │   ├── lib/
 │   │   ├── supabase/        # Supabase clients (browser, server and middleware)
 │   │   └── relative-time.ts
 │   ├── server/posts.ts      # feed, create and delete
+│   ├── server/follows.ts    # follow, unfollow, counts and lists
 │   ├── server/engagement.ts # likes, comments and the post page
 │   └── middleware.ts        # refreshes the Supabase session on every request
 ├── supabase/migrations/     # database SQL (tables, RLS, trigger and buckets)
@@ -107,10 +111,9 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
    2. [`supabase/migrations/0002_posts.sql`](supabase/migrations/0002_posts.sql) once. It creates `posts` and makes `post-photos` private (2 MB, JPEG/PNG/WebP).
    3. [`supabase/migrations/0003_security_fixes.sql`](supabase/migrations/0003_security_fixes.sql) once. It stops users from changing `school_id` (only `name`, `bio` and `avatar_url` stay editable), forces each post's id and time on the server, drops in-place replacement of post photos, and lets the owner delete an upload that never became a post. `set_my_school` can set the school once while it is still empty.
    4. [`supabase/migrations/0004_likes_comments.sql`](supabase/migrations/0004_likes_comments.sql) once. It adds `likes` (one per person per post) and `comments` (1 to 300 characters). Both follow the same visibility as the post: Geral, or Campus for your own school. You can delete your own like. You can delete a comment you wrote, and the author of the post can delete any comment on it. Deleting a post or a profile removes the related likes and comments. It also replaces `list_posts` so the feed returns the like count, the comment count and whether you liked the post in the same query.
+   5. [`supabase/migrations/0005_follows.sql`](supabase/migrations/0005_follows.sql) once. It adds `follows` (one row per pair, no self-follows) and replaces `list_posts` with a `seguindo` tab. A signed-in user can read every follow, insert only their own, and delete only their own. Campus posts of someone you follow appear only when you share their school. Deleting a profile, or the auth user that owns it, removes follows in both directions.
 
-   There is no fifth migration. The school picker reads active schools with the `anon` key, which `0001` already allows. In the app, a chosen school is stored only by calling `set_my_school`.
-
-   If you use the Supabase CLI, `supabase db push` runs the same files in order. Do not re-run `0001` after this. Its bucket section makes `post-photos` public again, and its grants let `authenticated` update every profile column, including `school_id`, and restore the photo replace policy. If you do re-run it, run `0002`, then `0003`, then `0004` again.
+   If you use the Supabase CLI, `supabase db push` runs the same files in order. Do not re-run `0001` after this. Its bucket section makes `post-photos` public again, and its grants let `authenticated` update every profile column, including `school_id`, and restore the photo replace policy. If you do re-run it, run `0002`, then `0003`, then `0004`, then `0005` again.
 
 5. In **Storage**, confirm `post-photos` exists and the public toggle is off. `avatars` stays public. There should be no update policy on `post-photos`.
 
@@ -118,8 +121,9 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
 
    - [`supabase/tests/school_lock.sql`](supabase/tests/school_lock.sql) after `0003`. A direct `school_id` update is blocked, an inactive school is rejected, `set_my_school` works once, a second call fails, updating `name` and `bio` still works, and the trigger still blocks `school_id` even if that column is granted.
    - [`supabase/tests/likes_comments.sql`](supabase/tests/likes_comments.sql) after `0004`. Two schools and three users: the other school cannot see, like or comment on a Campus post; a like is unique; the comment length is 1 to 300 characters; the author of a comment can delete it; the author of the post can delete someone else's comment; a third person cannot; deleting the post or the profile removes likes and comments.
+   - [`supabase/tests/follows.sql`](supabase/tests/follows.sql) after `0005`. No self-follow and no duplicate pair; nobody can insert or delete a follow for another user; follows cannot be updated; anonymous users cannot read them. Following someone at another school shows their Geral post and hides their Campus post, in the Seguindo tab and on their profile. A campus post from the same school is visible. Deleting a profile, and deleting an auth user, removes follows in both directions. Counts come from the rows, not a stored column.
 
-   With `psql` or the CLI: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/school_lock.sql` and the same for `supabase/tests/likes_comments.sql`.
+   With `psql` or the CLI: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/school_lock.sql` and the same for `supabase/tests/likes_comments.sql` and `supabase/tests/follows.sql`.
 
 7. Start the development server:
 

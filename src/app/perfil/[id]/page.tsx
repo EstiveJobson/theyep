@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import { AuthorPosts } from "@/components/author-posts";
+import { ProfileSocial } from "@/components/profile-social";
+import type { FollowStats } from "@/lib/follows";
 import { isUuid } from "@/lib/ids";
 import { joinedLabel } from "@/lib/relative-time";
 import { firstRelation } from "@/lib/relation";
 import { createClient } from "@/lib/supabase/server";
 import { getViewer } from "@/lib/viewer";
+import { getFollowStats } from "@/server/follows";
 
 type ProfileRow = {
   id: string;
@@ -50,6 +53,11 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   const name = profile.name.trim() || "Sem nome";
   const school = firstRelation(profile.schools)?.short_name?.trim() || "";
   const when = profile.created_at ? joinedLabel(profile.created_at) : "";
+  let followStats: FollowStats | null = null;
+  if (user) {
+    const stats = await getFollowStats(profile.id);
+    if (stats.ok) followStats = stats.stats;
+  }
 
   return (
     <div className="space-y-3">
@@ -71,6 +79,9 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
             {school ? <p className="truncate text-sm text-muted">{school}</p> : null}
           </div>
         </div>
+        {user ? (
+          <ProfileSocial profileId={profile.id} viewerId={user.id} initial={followStats} />
+        ) : null}
         <p className="mt-4 whitespace-pre-wrap break-words text-sm">
           {profile.bio.trim() || "Sem bio ainda."}
         </p>

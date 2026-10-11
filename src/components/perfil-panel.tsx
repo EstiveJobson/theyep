@@ -4,6 +4,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { applyPendingSchool } from "@/lib/pending-school";
+import { ProfileSocial } from "@/components/profile-social";
+import type { FollowStats } from "@/lib/follows";
 import { firstRelation } from "@/lib/relation";
 import { listActiveSchools, type SchoolOption } from "@/lib/schools";
 import { getBrowserClient, isSupabaseConfigured } from "@/lib/supabase/client";
@@ -53,7 +55,7 @@ function schoolLabel(profile: Profile | null): string {
   return firstRelation(profile?.schools)?.short_name?.trim() ?? "";
 }
 
-export function PerfilPanel() {
+export function PerfilPanel({ followStats = null }: { followStats?: FollowStats | null }) {
   const router = useRouter();
   const configured = isSupabaseConfigured();
   const [mode, setMode] = useState<Mode>("entrar");
@@ -317,6 +319,7 @@ export function PerfilPanel() {
             {campus ? <p className="truncate text-sm text-muted">{campus}</p> : null}
           </div>
         </div>
+        <ProfileSocial profileId={user.id} viewerId={user.id} initial={followStats} />
         <p className="mt-4 text-sm">{bio || "Sem bio ainda."}</p>
         {when ? <p className="mt-2 text-sm text-muted">{when}</p> : null}
         {canChooseSchool && !pickingSchool ? (
