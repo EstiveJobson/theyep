@@ -14,10 +14,14 @@ export type FollowPerson = {
   followedAt: string;
 };
 
+function formatCount(count: number): string {
+  return count.toLocaleString("pt-BR");
+}
+
 export function followerLabel(count: number): string {
-  return count === 1 ? "1 seguidor" : `${count} seguidores`;
+  return count === 1 ? "1 seguidor" : `${formatCount(count)} seguidores`;
 }
 
 export function followingLabel(count: number): string {
-  return `${count} seguindo`;
+  return `${formatCount(count)} seguindo`;
 }

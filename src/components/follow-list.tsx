@@ -10,6 +10,8 @@ function initialOf(name: string): string {
   return (name.trim().charAt(0) || "Y").toUpperCase();
 }
 
+const LIST_ERROR = "Não foi possível carregar a lista. Tente de novo.";
+
 export function FollowList({
   profileId,
   direction,
@@ -37,15 +39,20 @@ export function FollowList({
     setLoading(true);
     setError("");
     setMoreError("");
-    const result = await loadFollowList({ profileId, direction, cursor: null });
-    lock.current = false;
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const result = await loadFollowList({ profileId, direction, cursor: null });
+      if (!result.ok) {
+        setError(LIST_ERROR);
+        return;
+      }
+      setPeople(result.people);
+      setCursor(result.nextCursor);
+    } catch {
+      setError(LIST_ERROR);
+    } finally {
+      lock.current = false;
+      setLoading(false);
     }
-    setPeople(result.people);
-    setCursor(result.nextCursor);
   }
 
   async function loadMore() {
@@ -53,15 +60,20 @@ export function FollowList({
     lock.current = true;
     setLoadingMore(true);
     setMoreError("");
-    const result = await loadFollowList({ profileId, direction, cursor });
-    lock.current = false;
-    setLoadingMore(false);
-    if (!result.ok) {
-      setMoreError(result.error);
-      return;
+    try {
+      const result = await loadFollowList({ profileId, direction, cursor });
+      if (!result.ok) {
+        setMoreError(LIST_ERROR);
+        return;
+      }
+      setPeople((current) => [...current, ...result.people]);
+      setCursor(result.nextCursor);
+    } catch {
+      setMoreError(LIST_ERROR);
+    } finally {
+      lock.current = false;
+      setLoadingMore(false);
     }
-    setPeople((current) => [...current, ...result.people]);
-    setCursor(result.nextCursor);
   }
 
   if (loading) {
@@ -123,14 +135,24 @@ export function FollowList({
         ))}
       </ul>
       {moreError ? (
-        <p
-          role="alert"
-          className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
-        >
-          {moreError}
-        </p>
+        <div className="space-y-2">
+          <p
+            role="alert"
+            className="rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          >
+            {moreError}
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
+            className="h-11 w-full rounded-lg border border-line text-sm font-bold text-blue-ink disabled:opacity-60"
+          >
+            {loadingMore ? "Carregando…" : "Tentar de novo"}
+          </button>
+        </div>
       ) : null}
-      {cursor ? (
+      {cursor && !moreError ? (
         <button
           type="button"
           onClick={() => void loadMore()}

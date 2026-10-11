@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { readFeedTab, rememberFeedTab, type FeedTab } from "@/lib/feed-tab";
 import type { FeedCursor, FeedPost } from "@/server/posts";
 import { loadFeed } from "@/server/posts";
@@ -108,8 +108,13 @@ export function Feed({ viewerId, campusLabel }: { viewerId: string; campusLabel:
           <TabButton selected={tab === "geral"} onClick={() => choose("geral")}>
             Geral
           </TabButton>
-          <TabButton selected={tab === "campus"} onClick={() => choose("campus")}>
-            {campusLabel}
+          <TabButton
+            selected={tab === "campus"}
+            onClick={() => choose("campus")}
+            label={campusLabel}
+          >
+            <span className="sm:hidden">Campus</span>
+            <span className="hidden min-w-0 max-w-full truncate sm:inline">{campusLabel}</span>
           </TabButton>
           <TabButton selected={tab === "seguindo"} onClick={() => choose("seguindo")}>
             Seguindo
@@ -201,19 +206,22 @@ function TabButton({
   selected,
   onClick,
   children,
+  label,
 }: {
   selected: boolean;
   onClick: () => void;
-  children: string;
+  children: ReactNode;
+  label?: string;
 }) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={selected}
+      aria-label={label}
       onClick={onClick}
       className={
-        "min-h-11 min-w-0 truncate rounded-md px-2 text-sm font-extrabold " +
+        "flex min-h-11 min-w-0 items-center justify-center truncate rounded-md px-2 text-sm font-extrabold " +
         (selected ? "bg-card text-fg shadow-sm" : "text-muted")
       }
     >
