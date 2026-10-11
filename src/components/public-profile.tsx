@@ -15,9 +15,9 @@ type ProfileView = {
   id: string;
   name: string;
   avatarUrl: string | null;
-  bio: string;
-  school: string;
-  joined: string;
+  bio?: string;
+  school?: string;
+  joined?: string;
 };
 
 export function PublicProfile({
@@ -40,6 +40,7 @@ export function PublicProfile({
   const lock = useRef(false);
   const titleId = useId();
   const own = viewerId === profile.id;
+  const details = "bio" in profile ? profile : null;
 
   useEffect(() => {
     if (lock.current) return;
@@ -116,8 +117,8 @@ export function PublicProfile({
           {photo}
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-extrabold">{profile.name}</h1>
-            {profile.school ? (
-              <p className="truncate text-sm text-muted">{profile.school}</p>
+            {details?.school ? (
+              <p className="truncate text-sm text-muted">{details.school}</p>
             ) : null}
           </div>
           {viewerId && !own ? (
@@ -179,10 +180,12 @@ export function PublicProfile({
         {viewerId ? (
           <ProfileSocial profileId={profile.id} viewerId={viewerId} initial={followStats} />
         ) : null}
-        <p className="mt-4 whitespace-pre-wrap break-words text-sm">
-          {profile.bio.trim() || "Sem bio ainda."}
-        </p>
-        {profile.joined ? <p className="mt-2 text-sm text-muted">{profile.joined}</p> : null}
+        {details?.bio !== undefined ? (
+          <p className="mt-4 whitespace-pre-wrap break-words text-sm">
+            {details.bio.trim() || "Sem bio ainda."}
+          </p>
+        ) : null}
+        {details?.joined ? <p className="mt-2 text-sm text-muted">{details.joined}</p> : null}
         {error ? (
           <p role="alert" className="mt-3 text-sm font-semibold text-blue-ink">
             {error}

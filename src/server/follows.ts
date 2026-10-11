@@ -8,7 +8,7 @@ import { getViewer } from "@/lib/viewer";
 
 const PAGE = 20;
 
-const FOLLOW_ERROR = "Não foi possível seguir. Tente de novo.";
+const FOLLOW_ERROR = "Não foi possível seguir este perfil.";
 const UNFOLLOW_ERROR = "Não foi possível deixar de seguir. Tente de novo.";
 
 type StatsRow = {

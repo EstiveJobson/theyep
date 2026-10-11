@@ -1,4 +1,5 @@
 -- Proves blocks are one-way to read, mutual to enforce, and do not weaken Campus.
+-- There is no public function that answers "did A block B?".
 -- Run in the Supabase SQL Editor (as postgres) after 0006_blocks.sql.
 -- The script starts a transaction and rolls it back, so it leaves no data.
 -- A failing check aborts with FAIL: ...
@@ -183,6 +184,9 @@ select id, 'b em c'
 from public.posts
 where text = 'c geral';
 
+insert into public.likes (post_id)
+select id from public.posts where text = 'c geral';
+
 reset role;
 select set_config(
   'request.jwt.claims',
@@ -202,12 +206,20 @@ begin
     raise exception 'FAIL: a geral post is missing';
   end if;
   perform set_config('app.a_geral', a_geral::text, true);
+  perform set_config(
+    'app.c_geral',
+    (select id::text from public.posts where text = 'c geral'),
+    true
+  );
 
   select count(*) into n from public.comments where text in ('b em a', 'a em b', 'b em c');
   if n <> 3 then
     raise exception 'FAIL: comments were not created before the block (%)', n;
   end if;
 end $$;
+
+insert into public.likes (post_id)
+select id from public.posts where text = 'c geral';
 
 insert into public.blocks (blocked_id)
 values ('e4444444-4444-4444-8444-444444444444');
@@ -292,15 +304,22 @@ set local role authenticated;
 do $$
 declare
   n int;
-  blocked boolean;
 begin
-  select public.is_blocked_between(
-    'e3333333-3333-4333-8333-333333333333',
-    'e4444444-4444-4444-8444-444444444444'
-  ) into blocked;
-  if blocked is distinct from true then
-    raise exception 'FAIL: is_blocked_between did not return true';
-  end if;
+  begin
+    execute 'select public.is_blocked_between($1, $2)'
+      using
+        'e3333333-3333-4333-8333-333333333333'::uuid,
+        'e4444444-4444-4444-8444-444444444444'::uuid;
+    raise exception 'FAIL: B could call is_blocked_between';
+  exception
+    when undefined_function then
+      null;
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      raise exception 'FAIL: is_blocked_between failed differently (%)', sqlerrm;
+  end;
 
   select count(*) into n from public.blocks;
   if n <> 0 then
@@ -369,6 +388,14 @@ begin
 end $$;
 
 do $$
+declare
+  missing_state text;
+  missing_message text;
+  missing_detail text;
+  blocked_state text;
+  blocked_message text;
+  blocked_detail text;
+  n int;
 begin
   begin
     insert into public.likes (post_id)
@@ -394,6 +421,37 @@ begin
       raise notice 'ok: B cannot comment on A (%)', sqlerrm;
   end;
 
+  select count(*) into n
+  from public.likes
+  where post_id = current_setting('app.c_geral')::uuid
+    and user_id = 'e3333333-3333-4333-8333-333333333333';
+  if n <> 0 then
+    raise exception 'FAIL: B can see A like on C post';
+  end if;
+
+  select count(*) into n
+  from public.likes
+  where post_id = current_setting('app.c_geral')::uuid
+    and user_id = 'e4444444-4444-4444-8444-444444444444';
+  if n <> 1 then
+    raise exception 'FAIL: B lost their own like on C post';
+  end if;
+
+  begin
+    insert into public.follows (following_id)
+    values ('abababab-abab-4aba-8aba-abababababab');
+    raise exception 'FAIL: followed a missing profile';
+  exception
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      get stacked diagnostics
+        missing_state = returned_sqlstate,
+        missing_message = message_text,
+        missing_detail = pg_exception_detail;
+  end;
+
   begin
     insert into public.follows (following_id)
     values ('e3333333-3333-4333-8333-333333333333');
@@ -403,8 +461,28 @@ begin
       if sqlerrm like 'FAIL:%' then
         raise;
       end if;
-      raise notice 'ok: B cannot follow A (%)', sqlerrm;
+      get stacked diagnostics
+        blocked_state = returned_sqlstate,
+        blocked_message = message_text,
+        blocked_detail = pg_exception_detail;
   end;
+
+  if missing_state is distinct from '23503'
+     or blocked_state is distinct from missing_state then
+    raise exception 'FAIL: follow sqlstate missing=% blocked=%', missing_state, blocked_state;
+  end if;
+  if blocked_message is distinct from missing_message then
+    raise exception 'FAIL: follow message differs missing=% blocked=%', missing_message, blocked_message;
+  end if;
+  if blocked_detail is distinct from missing_detail
+     and replace(
+       coalesce(missing_detail, ''),
+       'abababab-abab-4aba-8aba-abababababab',
+       'e3333333-3333-4333-8333-333333333333'
+     ) is distinct from coalesce(blocked_detail, '') then
+    raise exception 'FAIL: follow detail differs missing=% blocked=%', missing_detail, blocked_detail;
+  end if;
+  raise notice 'ok: follow during a block matches a missing profile';
 end $$;
 
 -- A still sees B's profile, but not B's posts, comments, or list entry.
@@ -462,6 +540,29 @@ begin
   where profile_id = 'e4444444-4444-4444-8444-444444444444';
   if n <> 0 then
     raise exception 'FAIL: A can see B in C followers';
+  end if;
+
+  select count(*) into n
+  from public.likes
+  where post_id = current_setting('app.c_geral')::uuid
+    and user_id = 'e4444444-4444-4444-8444-444444444444';
+  if n <> 0 then
+    raise exception 'FAIL: A can see B like on C post';
+  end if;
+
+  select count(*) into n
+  from public.likes
+  where post_id = current_setting('app.c_geral')::uuid
+    and user_id = 'e3333333-3333-4333-8333-333333333333';
+  if n <> 1 then
+    raise exception 'FAIL: A lost their own like on C post';
+  end if;
+
+  select like_count into n
+  from public.posts
+  where id = current_setting('app.c_geral')::uuid;
+  if n <> 2 then
+    raise exception 'FAIL: like_count dropped a hidden like (%)', n;
   end if;
 
   begin
@@ -526,7 +627,88 @@ begin
   if n <> 1 then
     raise exception 'FAIL: C cannot see B in their own followers';
   end if;
+
+  select count(*) into n
+  from public.likes
+  where post_id = current_setting('app.c_geral')::uuid
+    and user_id in (
+      'e3333333-3333-4333-8333-333333333333',
+      'e4444444-4444-4444-8444-444444444444'
+    );
+  if n <> 2 then
+    raise exception 'FAIL: C lost a like that is not part of C''s block (%)', n;
+  end if;
+
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+    where ns.nspname = 'public'
+      and p.proname in ('is_blocked_between', 'my_block_partners', 'my_hidden_profiles')
+  ) then
+    raise exception 'FAIL: block helper is exposed in public';
+  end if;
+
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+    where ns.nspname = 'public'
+      and p.prosrc ilike '%is_blocked_between%'
+  ) then
+    raise exception 'FAIL: a public function still mentions is_blocked_between';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+    where ns.nspname = 'private'
+      and p.proname = 'my_block_partners'
+      and p.prosecdef
+  ) or not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+    where ns.nspname = 'private'
+      and p.proname = 'my_hidden_profiles'
+      and p.prosecdef
+  ) then
+    raise exception 'FAIL: private block helpers are missing';
+  end if;
+
+  begin
+    execute 'select public.is_blocked_between($1, $2)'
+      using
+        'e5555555-5555-4555-8555-555555555555'::uuid,
+        'e3333333-3333-4333-8333-333333333333'::uuid;
+    raise exception 'FAIL: is_blocked_between returned a row';
+  exception
+    when undefined_function then
+      null;
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      raise exception 'FAIL: is_blocked_between failed differently (%)', sqlerrm;
+  end;
+
+  select count(*) into n from public.blocks;
+  if n <> 0 then
+    raise exception 'FAIL: C can read a block between A and B (%)', n;
+  end if;
+
+  select count(*) into n
+  from public.profiles
+  where id in (
+    'e3333333-3333-4333-8333-333333333333',
+    'e4444444-4444-4444-8444-444444444444'
+  );
+  if n <> 2 then
+    raise exception 'FAIL: C lost a profile that did not block them';
+  end if;
   raise notice 'ok: campus rule still holds for C';
+  raise notice 'ok: no public block oracle';
 end $$;
 
 -- The block row must still exist after B's delete attempt.

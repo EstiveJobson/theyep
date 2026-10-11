@@ -1,13 +1,27 @@
 -- TheYep: block another person.
 -- Run once after 0005_follows.sql.
 -- The client inserts only blocked_id. The trigger sets blocker_id and created_at.
--- The blocked person cannot read the blocks table. is_blocked_between is the only
--- security-definer function that reads it, and it returns a boolean, never a row.
+-- The blocked person cannot read the blocks table.
+--
+-- Who is in a block with the caller is NOT a public function. PostgREST would
+-- expose public.is_blocked_between(any, any) and anyone could ask who blocked
+-- whom. The helpers live in schema private, which is not an exposed API schema.
+-- Do not add "private" to the Data API exposed schemas. authenticated can
+-- execute them only so policies can. They return ids for the caller, never an
+-- arbitrary pair, and they are not reachable at /rest/v1/rpc/.
+--
 -- Blocking deletes follows in both directions. Unblocking does not put them back.
+-- like_count and comment_count stay as stored totals. A block hides rows, not
+-- those counters (v1).
 --
 -- Account deletion: profiles.id references auth.users on delete cascade (0001).
 -- Both block columns reference profiles on delete cascade, so deleting the auth
 -- user removes the profile and every block in both directions.
+
+create schema if not exists private;
+
+revoke all on schema private from public;
+grant usage on schema private to authenticated;
 
 create table if not exists public.blocks (
   blocker_id uuid not null references public.profiles (id) on delete cascade,
@@ -19,22 +33,66 @@ create table if not exists public.blocks (
 
 create index if not exists blocks_blocked_id_idx on public.blocks (blocked_id);
 
+-- Ids of everyone in a block with the caller, either direction.
+-- Not granted through the Data API: schema private is not exposed.
+create or replace function private.my_block_partners()
+returns uuid[]
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(
+    array_agg(
+      case
+        when b.blocker_id = (select auth.uid()) then b.blocked_id
+        else b.blocker_id
+      end
+    ),
+    '{}'
+  )
+  from public.blocks b
+  where b.blocker_id = (select auth.uid())
+     or b.blocked_id = (select auth.uid());
+$$;
+
+-- Ids of people who blocked the caller. Not the people the caller blocked,
+-- so the blocker can still read that profile while the other person cannot.
+create or replace function private.my_hidden_profiles()
+returns uuid[]
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(array_agg(b.blocker_id), '{}')
+  from public.blocks b
+  where b.blocked_id = (select auth.uid());
+$$;
+
+revoke all on function private.my_block_partners() from public, anon;
+revoke all on function private.my_hidden_profiles() from public, anon;
+grant execute on function private.my_block_partners() to authenticated;
+grant execute on function private.my_hidden_profiles() to authenticated;
+
 create or replace function public.blocks_before_insert()
 returns trigger
 language plpgsql
 security invoker
 set search_path = public, pg_temp
 as $$
+declare
+  uid uuid := (select auth.uid());
 begin
-  if auth.uid() is null then
+  if uid is null then
     raise exception 'not authenticated';
   end if;
 
-  if new.blocker_id is not null and new.blocker_id is distinct from auth.uid() then
+  if new.blocker_id is not null and new.blocker_id is distinct from uid then
     raise exception 'cannot block as another user';
   end if;
 
-  new.blocker_id := auth.uid();
+  new.blocker_id := uid;
   new.created_at := now();
   return new;
 end;
@@ -61,40 +119,21 @@ create policy "le os proprios bloqueios"
   on public.blocks
   for select
   to authenticated
-  using (blocker_id = auth.uid());
+  using (blocker_id = (select auth.uid()));
 
 drop policy if exists "bloqueia alguem" on public.blocks;
 create policy "bloqueia alguem"
   on public.blocks
   for insert
   to authenticated
-  with check (blocker_id = auth.uid());
+  with check (blocker_id = (select auth.uid()));
 
 drop policy if exists "desbloqueia" on public.blocks;
 create policy "desbloqueia"
   on public.blocks
   for delete
   to authenticated
-  using (blocker_id = auth.uid());
-
--- True when either person blocked the other. No other columns.
-create or replace function public.is_blocked_between(a uuid, b uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select exists (
-    select 1
-    from public.blocks bl
-    where (bl.blocker_id = a and bl.blocked_id = b)
-       or (bl.blocker_id = b and bl.blocked_id = a)
-  );
-$$;
-
-revoke all on function public.is_blocked_between(uuid, uuid) from public, anon;
-grant execute on function public.is_blocked_between(uuid, uuid) to authenticated;
+  using (blocker_id = (select auth.uid()));
 
 -- Each person can only delete their own follow, so this runs as the owner.
 create or replace function public.blocks_after_insert()
@@ -120,19 +159,24 @@ create trigger blocks_after_insert
   execute function public.blocks_after_insert();
 
 -- Posts: same audience as 0002, plus neither side of a block can see the post.
+-- The partner list is one InitPlan, not a function call per row.
 drop policy if exists "le posts do feed" on public.posts;
 create policy "le posts do feed"
   on public.posts
   for select
   to authenticated
   using (
-    not public.is_blocked_between(auth.uid(), author_id)
+    author_id not in (select unnest(private.my_block_partners()))
     and (
       to_general
       or (
         to_campus
         and school_id is not null
-        and school_id = (select p.school_id from public.profiles p where p.id = auth.uid())
+        and school_id = (
+          select p.school_id
+          from public.profiles p
+          where p.id = (select auth.uid())
+        )
       )
     )
   );
@@ -145,19 +189,21 @@ stable
 security invoker
 set search_path = public, pg_temp
 as $$
-  select auth.uid() is not null
+  select (select auth.uid()) is not null
     and exists (
       select 1
       from public.posts p
       where p.id = p_post
-        and not public.is_blocked_between(auth.uid(), p.author_id)
+        and p.author_id not in (select unnest(private.my_block_partners()))
         and (
           p.to_general
           or (
             p.to_campus
             and p.school_id is not null
             and p.school_id = (
-              select pr.school_id from public.profiles pr where pr.id = auth.uid()
+              select pr.school_id
+              from public.profiles pr
+              where pr.id = (select auth.uid())
             )
           )
         )
@@ -175,18 +221,22 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select auth.uid() is not null
+  select (select auth.uid()) is not null
     and exists (
       select 1
       from public.posts p
       where p.photo_path = object_name
-        and not public.is_blocked_between(auth.uid(), p.author_id)
+        and p.author_id not in (select unnest(private.my_block_partners()))
         and (
           p.to_general
           or (
             p.to_campus
             and p.school_id is not null
-            and p.school_id = (select pr.school_id from public.profiles pr where pr.id = auth.uid())
+            and p.school_id = (
+              select pr.school_id
+              from public.profiles pr
+              where pr.id = (select auth.uid())
+            )
           )
         )
     );
@@ -195,39 +245,165 @@ $$;
 revoke all on function public.can_read_post_photo(text) from public, anon;
 grant execute on function public.can_read_post_photo(text) to authenticated;
 
--- Likes and comments INSERT already require can_read_post, so a block stops both.
--- Comments SELECT also hides a comment whose author is blocked either way,
--- including an old comment on someone else's post.
+-- Likes SELECT keeps can_read_post and also hides a like whose author is in a
+-- block with the viewer. The stored like_count is not filtered.
+drop policy if exists "le curtidas de posts visiveis" on public.likes;
+create policy "le curtidas de posts visiveis"
+  on public.likes
+  for select
+  to authenticated
+  using (
+    public.can_read_post(post_id)
+    and user_id not in (select unnest(private.my_block_partners()))
+  );
+
+-- Comments SELECT hides a comment whose author is in a block with the viewer,
+-- and a comment on a post the viewer cannot read. The partner list is computed
+-- once. Direct selects stay on RLS. like_count / comment_count are not filtered.
 drop policy if exists "le comentarios de posts visiveis" on public.comments;
 create policy "le comentarios de posts visiveis"
   on public.comments
   for select
   to authenticated
   using (
-    public.can_read_post(post_id)
-    and not public.is_blocked_between(auth.uid(), user_id)
+    user_id not in (select unnest(private.my_block_partners()))
+    and exists (
+      select 1
+      from public.posts p
+      where p.id = comments.post_id
+        and p.author_id not in (select unnest(private.my_block_partners()))
+        and (
+          p.to_general
+          or (
+            p.to_campus
+            and p.school_id is not null
+            and p.school_id = (
+              select pr.school_id
+              from public.profiles pr
+              where pr.id = (select auth.uid())
+            )
+          )
+        )
+    )
   );
 
+-- One readability check for this post, then the block set. security definer so
+-- the comments RLS policy (which also protects a direct select) is not applied
+-- again to every comment in this page. The function repeats that filter.
+create or replace function public.list_comments(
+  p_post uuid,
+  p_cursor_at timestamptz default null,
+  p_cursor_id uuid default null,
+  p_limit integer default 50
+)
+returns table (
+  id uuid,
+  user_id uuid,
+  text text,
+  created_at timestamptz,
+  author_name text,
+  avatar_url text
+)
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not coalesce(public.can_read_post(p_post), false) then
+    return;
+  end if;
+
+  return query
+  select
+    c.id,
+    c.user_id,
+    c.text,
+    c.created_at,
+    pr.name,
+    pr.avatar_url
+  from public.comments c
+  join public.profiles pr on pr.id = c.user_id
+  where c.post_id = p_post
+    and c.user_id not in (select unnest(private.my_block_partners()))
+    and (
+      p_cursor_at is null
+      or (
+        p_cursor_id is not null
+        and (c.created_at, c.id) > (p_cursor_at, p_cursor_id)
+      )
+    )
+  order by c.created_at asc, c.id asc
+  limit least(greatest(coalesce(p_limit, 50), 1), 51);
+end;
+$$;
+
+revoke all on function public.list_comments(uuid, timestamptz, uuid, integer) from public, anon;
+grant execute on function public.list_comments(uuid, timestamptz, uuid, integer) to authenticated;
+
+-- A block must not be distinguishable from a missing profile (both 23503).
+-- The raised error is a copy of the real follows.following_id foreign key.
 create or replace function public.follows_before_insert()
 returns trigger
 language plpgsql
 security invoker
 set search_path = public, pg_temp
 as $$
+declare
+  uid uuid := (select auth.uid());
+  sentinel constant uuid := '00000000-0000-0000-0000-000000000000';
+  fk_message text;
+  fk_detail text;
+  fk_constraint text;
+  fk_schema text;
+  fk_table text;
 begin
-  if auth.uid() is null then
+  if uid is null then
     raise exception 'not authenticated';
   end if;
 
-  if new.follower_id is not null and new.follower_id is distinct from auth.uid() then
+  if new.follower_id is not null and new.follower_id is distinct from uid then
     raise exception 'cannot follow as another user';
   end if;
 
-  new.follower_id := auth.uid();
+  new.follower_id := uid;
   new.created_at := now();
 
-  if public.is_blocked_between(new.follower_id, new.following_id) then
-    raise exception 'blocked';
+  if new.following_id is not null
+     and new.following_id = any (private.my_block_partners()) then
+    begin
+      insert into public.follows (following_id)
+      values (sentinel);
+    exception
+      when foreign_key_violation then
+        get stacked diagnostics
+          fk_message = message_text,
+          fk_detail = pg_exception_detail,
+          fk_constraint = constraint_name,
+          fk_schema = schema_name,
+          fk_table = table_name;
+    end;
+
+    if fk_detail is not null and position(sentinel::text in fk_detail) > 0 then
+      fk_detail := replace(fk_detail, sentinel::text, new.following_id::text);
+    end if;
+
+    raise exception using
+      errcode = '23503',
+      message = coalesce(
+        fk_message,
+        'insert or update on table "follows" violates foreign key constraint "follows_following_id_fkey"'
+      ),
+      detail = coalesce(
+        fk_detail,
+        format(
+          'Key (following_id)=(%s) is not present in table "profiles".',
+          new.following_id
+        )
+      ),
+      constraint = coalesce(fk_constraint, 'follows_following_id_fkey'),
+      schema = coalesce(fk_schema, 'public'),
+      table = coalesce(fk_table, 'follows');
   end if;
 
   return new;
@@ -243,8 +419,8 @@ create policy "le seguidores"
   for select
   to authenticated
   using (
-    not public.is_blocked_between(auth.uid(), follower_id)
-    and not public.is_blocked_between(auth.uid(), following_id)
+    follower_id not in (select unnest(private.my_block_partners()))
+    and following_id not in (select unnest(private.my_block_partners()))
   );
 
 drop policy if exists "segue alguem" on public.follows;
@@ -253,8 +429,8 @@ create policy "segue alguem"
   for insert
   to authenticated
   with check (
-    follower_id = auth.uid()
-    and not public.is_blocked_between(follower_id, following_id)
+    follower_id = (select auth.uid())
+    and following_id not in (select unnest(private.my_block_partners()))
   );
 
 -- list_follows stays security invoker. Hide a person who is in a block with the viewer.
@@ -295,7 +471,7 @@ as $$
       (p_direction = 'seguidores' and f.following_id = p_profile)
       or (p_direction = 'seguindo' and f.follower_id = p_profile)
     )
-    and not public.is_blocked_between(auth.uid(), pr.id)
+    and pr.id not in (select unnest(private.my_block_partners()))
     and (
       p_cursor_at is null
       or (
@@ -311,8 +487,7 @@ revoke all on function public.list_follows(uuid, text, timestamptz, uuid, intege
 grant execute on function public.list_follows(uuid, text, timestamptz, uuid, integer) to authenticated;
 
 -- The blocked person cannot read the blocker's profile.
--- The blocker can still read the blocked person's profile: their own block row
--- is visible, and is_blocked_between alone would hide both directions.
+-- The blocker can still read the blocked person's profile.
 drop policy if exists "perfis sao visiveis" on public.profiles;
 
 create policy "perfis sao visiveis"
@@ -327,15 +502,7 @@ create policy "perfis autenticados respeitam bloqueio"
   for select
   to authenticated
   using (
-    not (
-      public.is_blocked_between(id, auth.uid())
-      and not exists (
-        select 1
-        from public.blocks b
-        where b.blocker_id = auth.uid()
-          and b.blocked_id = profiles.id
-      )
-    )
+    id not in (select unnest(private.my_hidden_profiles()))
   );
 
 create or replace function public.list_blocks(
@@ -361,7 +528,7 @@ as $$
     b.created_at
   from public.blocks b
   join public.profiles pr on pr.id = b.blocked_id
-  where b.blocker_id = auth.uid()
+  where b.blocker_id = (select auth.uid())
     and (
       p_cursor_at is null
       or (
@@ -375,5 +542,7 @@ $$;
 
 revoke all on function public.list_blocks(timestamptz, uuid, integer) from public, anon;
 grant execute on function public.list_blocks(timestamptz, uuid, integer) to authenticated;
+
+drop function if exists public.is_blocked_between(uuid, uuid);
 
 notify pgrst, 'reload schema';

@@ -68,10 +68,25 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   }
 
   const name = profile.name.trim() || "Sem nome";
+  if (blockedByMe) {
+    return (
+      <PublicProfile
+        profile={{
+          id: profile.id,
+          name,
+          avatarUrl: profile.avatar_url,
+        }}
+        viewerId={user?.id ?? null}
+        blockedByMe
+        followStats={null}
+      />
+    );
+  }
+
   const school = firstRelation(profile.schools)?.short_name?.trim() || "";
   const when = profile.created_at ? joinedLabel(profile.created_at) : "";
   let followStats: FollowStats | null = null;
-  if (user && !blockedByMe) {
+  if (user) {
     const stats = await getFollowStats(profile.id);
     if (stats.ok) followStats = stats.stats;
   }
@@ -87,7 +102,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
         joined: when,
       }}
       viewerId={user?.id ?? null}
-      blockedByMe={blockedByMe}
+      blockedByMe={false}
       followStats={followStats}
     />
   );

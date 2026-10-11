@@ -61,7 +61,7 @@ export function ProfileSocial({
       followers: Math.max(0, stats.followers + (next ? 1 : -1)),
     });
     const message = next
-      ? "Não foi possível seguir. Tente de novo."
+      ? "Não foi possível seguir este perfil."
       : "Não foi possível deixar de seguir. Tente de novo.";
     try {
       const result = await setFollow(profileId, next);
