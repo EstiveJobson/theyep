@@ -87,9 +87,12 @@ Logo sources are in [`brand/`](brand/README.md) (outlined SVGs, plus editable ma
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   NEXT_PUBLIC_SITE_URL=
    ```
 
    Only use the `anon` key. Never put the `service_role` key in the project and never commit `.env.local`.
+
+   `NEXT_PUBLIC_SITE_URL` is optional. When set to an absolute URL (for example `https://theyep.example`), Open Graph and Twitter tags use it. If it is empty, the app uses `https://$VERCEL_URL` on Vercel, then `http://localhost:3000`.
 
 4. Set up the database: open the Supabase **SQL Editor** and run the contents of [`supabase/migrations/0001_foundation.sql`](supabase/migrations/0001_foundation.sql) once. Before that, replace the placeholder names `[ESCOLA_1]`, `[ESCOLA_2]` and `[ESCOLA_3]` with real schools.
 
@@ -119,7 +122,7 @@ Without the Supabase variables the app still opens, but login is disabled and a 
 ## Deploying to Vercel
 
 1. Import the repository on [Vercel](https://vercel.com/new). The Next.js framework is detected automatically.
-2. Under **Settings → Environment Variables**, add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Under **Settings → Environment Variables**, add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Optionally set `NEXT_PUBLIC_SITE_URL` to the public `https` URL so share links do not depend on the Vercel hostname.
 3. Deploy.
 4. In Supabase, under **Authentication → URL Configuration**, set your Vercel domain as the _Site URL_ so email confirmation links work.
 

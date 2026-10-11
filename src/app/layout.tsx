@@ -11,9 +11,20 @@ const nunito = Nunito({
   display: "swap",
 });
 
+function resolveMetadataBase(): URL {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configured) return new URL(configured);
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) return new URL(`https://${vercel}`);
+  return new URL("http://localhost:3000");
+}
+
+const metadataBase = resolveMetadataBase();
+
 const themeInit = `(function(){try{var k="theyep-theme";var s=localStorage.getItem(k);var d=s==="dark"||(s!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",d?"#212121":"#FFFFFF");}catch(e){}})();`;
 
 export const metadata: Metadata = {
+  metadataBase,
   title: "TheYep",
   description: "Uma rede simples para a escola.",
   applicationName: "TheYep",
@@ -39,6 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "TheYep",
     description: "Uma rede simples para a escola.",
+    url: "/",
     type: "website",
     images: [{ url: "/og.png", width: 1200, height: 630, alt: "TheYep" }],
   },
