@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { PostThread } from "@/components/post-thread";
 import { isUuid } from "@/lib/ids";
 import { loadPostPage } from "@/server/engagement";
@@ -32,11 +33,11 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  if (!isUuid(id)) return <MissingPost />;
+  if (!isUuid(id)) notFound();
 
   const result = await loadPostPage(id);
   if (!result.ok) {
-    if (result.notFound) return <MissingPost />;
+    if (result.notFound) notFound();
     return (
       <section className="card px-6 py-10 text-center">
         <h1 className="text-lg font-extrabold">Não foi possível carregar o post</h1>
@@ -52,17 +53,5 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
       initialComments={result.comments}
       initialCursor={result.nextCursor}
     />
-  );
-}
-
-function MissingPost() {
-  return (
-    <section className="card px-6 py-10 text-center">
-      <h1 className="text-lg font-extrabold">Post não encontrado</h1>
-      <p className="mt-2 text-muted">Ele não existe ou não está disponível para você.</p>
-      <Link href="/" className="mt-4 inline-flex h-11 items-center font-bold text-blue-ink">
-        Voltar ao início
-      </Link>
-    </section>
   );
 }

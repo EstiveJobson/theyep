@@ -18,7 +18,10 @@ create table if not exists public.comments (
   user_id uuid not null references public.profiles (id) on delete cascade,
   text text not null,
   created_at timestamptz not null default now(),
-  constraint comments_text_len check (char_length(btrim(text)) between 1 and 300)
+  constraint comments_text_len check (
+    char_length(text) <= 300
+    and char_length(regexp_replace(text, '[\s\u00a0\u200b-\u200d\u2060\ufeff]', '', 'g')) >= 1
+  )
 );
 
 create index if not exists comments_post_created_idx
@@ -111,6 +114,141 @@ create trigger comments_before_insert
   before insert on public.comments
   for each row
   execute function public.comments_before_insert();
+
+-- Re-apply the text rule so a second run of this file updates an older check.
+alter table public.comments drop constraint if exists comments_text_len;
+alter table public.comments add constraint comments_text_len check (
+  char_length(text) <= 300
+  and char_length(regexp_replace(text, '[\s\u00a0\u200b-\u200d\u2060\ufeff]', '', 'g')) >= 1
+);
+
+-- Counts live on the post so the feed does not call can_read_post() once per like.
+alter table public.posts
+  add column if not exists like_count integer not null default 0;
+
+alter table public.posts
+  add column if not exists comment_count integer not null default 0;
+
+alter table public.posts drop constraint if exists posts_like_count_nonneg;
+alter table public.posts
+  add constraint posts_like_count_nonneg check (like_count >= 0);
+
+alter table public.posts drop constraint if exists posts_comment_count_nonneg;
+alter table public.posts
+  add constraint posts_comment_count_nonneg check (comment_count >= 0);
+
+create or replace function public.likes_count_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.posts
+    set like_count = like_count + 1
+    where id = new.post_id;
+    return new;
+  end if;
+
+  update public.posts
+  set like_count = greatest(like_count - 1, 0)
+  where id = old.post_id;
+  return old;
+end;
+$$;
+
+revoke all on function public.likes_count_change() from public, anon, authenticated;
+
+create or replace function public.comments_count_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.posts
+    set comment_count = comment_count + 1
+    where id = new.post_id;
+    return new;
+  end if;
+
+  update public.posts
+  set comment_count = greatest(comment_count - 1, 0)
+  where id = old.post_id;
+  return old;
+end;
+$$;
+
+revoke all on function public.comments_count_change() from public, anon, authenticated;
+
+drop trigger if exists likes_count_change on public.likes;
+create trigger likes_count_change
+  after insert or delete on public.likes
+  for each row
+  execute function public.likes_count_change();
+
+drop trigger if exists comments_count_change on public.comments;
+create trigger comments_count_change
+  after insert or delete on public.comments
+  for each row
+  execute function public.comments_count_change();
+
+update public.posts p
+set
+  like_count = coalesce((select count(*)::integer from public.likes l where l.post_id = p.id), 0),
+  comment_count = coalesce((select count(*)::integer from public.comments c where c.post_id = p.id), 0);
+
+-- Same rules as 0003, and the client cannot choose the counters.
+create or replace function public.posts_before_insert()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  profile_school uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  new.id := gen_random_uuid();
+  new.created_at := now();
+  new.author_id := auth.uid();
+  new.like_count := 0;
+  new.comment_count := 0;
+
+  select p.school_id into profile_school
+  from public.profiles p
+  where p.id = auth.uid();
+
+  new.school_id := profile_school;
+
+  if profile_school is null then
+    new.to_campus := false;
+  end if;
+
+  if new.text is not null then
+    new.text := nullif(btrim(new.text), '');
+  end if;
+
+  if new.photo_path is not null then
+    new.photo_path := nullif(btrim(new.photo_path), '');
+  end if;
+
+  if new.photo_path is not null
+     and new.photo_path !~ ('^' || auth.uid()::text || '/[A-Za-z0-9._-]+$') then
+    raise exception 'invalid photo path';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke insert, update on public.posts from authenticated;
+grant insert (text, photo_path, to_general, to_campus) on public.posts to authenticated;
 
 alter table public.likes enable row level security;
 alter table public.comments enable row level security;
@@ -216,8 +354,8 @@ as $$
     pr.name,
     pr.avatar_url,
     s.short_name,
-    (select count(*) from public.likes l where l.post_id = p.id),
-    (select count(*) from public.comments c where c.post_id = p.id),
+    p.like_count,
+    p.comment_count,
     exists (
       select 1
       from public.likes l
@@ -284,8 +422,8 @@ as $$
     pr.name,
     pr.avatar_url,
     s.short_name,
-    (select count(*) from public.likes l where l.post_id = p.id),
-    (select count(*) from public.comments c where c.post_id = p.id),
+    p.like_count,
+    p.comment_count,
     exists (
       select 1
       from public.likes l
@@ -338,8 +476,8 @@ as $$
     pr.name,
     pr.avatar_url,
     s.short_name,
-    (select count(*) from public.likes l where l.post_id = p.id),
-    (select count(*) from public.comments c where c.post_id = p.id),
+    p.like_count,
+    p.comment_count,
     exists (
       select 1
       from public.likes l

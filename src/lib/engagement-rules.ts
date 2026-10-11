@@ -4,12 +4,15 @@ export function charCount(value: string): number {
   return [...value].length;
 }
 
+const INVISIBLE = /[\u200b-\u200d\u2060\ufeff]/g;
+
 export function normalizeComment(input: string): string {
-  return input.replace(/\r\n/g, "\n").trim();
+  return input.replace(/\r\n/g, "\n").replace(INVISIBLE, "").trim();
 }
 
 export function commentError(text: string): string | null {
-  if (!text) return "Escreva um comentário.";
+  const visible = text.replace(/[\s\u00a0\u200b-\u200d\u2060\ufeff]/g, "");
+  if (!visible) return "Escreva um comentário.";
   if (charCount(text) > COMMENT_MAX) return "O comentário pode ter no máximo 300 caracteres.";
   return null;
 }

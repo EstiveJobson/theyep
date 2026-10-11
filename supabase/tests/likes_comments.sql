@@ -68,6 +68,15 @@ begin
   values ('para todo mundo', true, false)
   returning id into new_id;
   perform set_config('app.general_post', new_id::text, true);
+
+  if (
+    (select like_count from public.posts where id = current_setting('app.campus_post')::uuid) <> 0
+    or (select comment_count from public.posts where id = current_setting('app.campus_post')::uuid) <> 0
+    or (select like_count from public.posts where id = current_setting('app.general_post')::uuid) <> 0
+    or (select comment_count from public.posts where id = current_setting('app.general_post')::uuid) <> 0
+  ) then
+    raise exception 'FAIL: new posts did not start with zero counters';
+  end if;
 end $$;
 
 reset role;
@@ -178,14 +187,23 @@ end $$;
 do $$
 declare
   likes bigint;
+  comments bigint;
   mine boolean;
 begin
-  select like_count, liked_by_me
-  into likes, mine
+  select like_count, comment_count, liked_by_me
+  into likes, comments, mine
   from public.list_posts('geral', null, null, 20)
   where id = current_setting('app.general_post')::uuid;
-  if likes is distinct from 1 or mine is distinct from true then
-    raise exception 'FAIL: feed like state is % liked %', likes, mine;
+  if likes is distinct from 1 or comments is distinct from 1 or mine is distinct from true then
+    raise exception 'FAIL: feed like state is % comments % liked %', likes, comments, mine;
+  end if;
+
+  select p.like_count, p.comment_count
+  into likes, comments
+  from public.posts p
+  where p.id = current_setting('app.general_post')::uuid;
+  if likes is distinct from 1 or comments is distinct from 1 then
+    raise exception 'FAIL: stored counters after like and comment are % / %', likes, comments;
   end if;
   raise notice 'ok: feed returns like count and liked_by_me';
 end $$;
@@ -193,6 +211,8 @@ end $$;
 do $$
 declare
   n int;
+  likes int;
+  comments int;
 begin
   delete from public.likes
   where post_id = current_setting('app.general_post')::uuid
@@ -209,10 +229,25 @@ begin
   if n <> 0 then
     raise exception 'FAIL: like still there after unlike';
   end if;
+
+  select like_count, comment_count
+  into likes, comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if likes <> 0 or comments <> 1 then
+    raise exception 'FAIL: counters after unlike are % / %', likes, comments;
+  end if;
   raise notice 'ok: unlike';
 
   insert into public.likes (post_id)
   values (current_setting('app.general_post')::uuid);
+
+  select like_count into likes
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if likes <> 1 then
+    raise exception 'FAIL: like_count after liking again is %', likes;
+  end if;
 end $$;
 
 do $$
@@ -261,6 +296,39 @@ end $$;
 
 do $$
 declare
+  sample text;
+  samples text[] := array[
+    chr(8203),
+    chr(65279),
+    chr(160),
+    chr(8203) || chr(8204) || chr(8205) || chr(8288) || chr(65279) || chr(160)
+  ];
+  comments int;
+begin
+  foreach sample in array samples loop
+    begin
+      insert into public.comments (post_id, text)
+      values (current_setting('app.general_post')::uuid, sample);
+      raise exception 'FAIL: invisible comment was accepted';
+    exception
+      when others then
+        if sqlerrm like 'FAIL:%' then
+          raise;
+        end if;
+    end;
+  end loop;
+
+  select comment_count into comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if comments <> 1 then
+    raise exception 'FAIL: rejected invisible comments changed comment_count to %', comments;
+  end if;
+  raise notice 'ok: invisible comments rejected';
+end $$;
+
+do $$
+declare
   new_id uuid;
   got int;
 begin
@@ -272,7 +340,67 @@ begin
     raise exception 'FAIL: 300 character comment was stored as %', got;
   end if;
   delete from public.comments where id = new_id;
+
+  select comment_count into got
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if got <> 1 then
+    raise exception 'FAIL: comment_count after deleting the extra comment is %', got;
+  end if;
   raise notice 'ok: 300 character comment';
+end $$;
+
+do $$
+begin
+  begin
+    insert into public.posts (text, to_general, to_campus, like_count)
+    values ('forjado', true, false, 7);
+    raise exception 'FAIL: client set like_count on insert';
+  exception
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      raise notice 'ok: insert like_count blocked (%)', sqlerrm;
+  end;
+
+  begin
+    insert into public.posts (text, to_general, to_campus, comment_count)
+    values ('forjado', true, false, 7);
+    raise exception 'FAIL: client set comment_count on insert';
+  exception
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      raise notice 'ok: insert comment_count blocked (%)', sqlerrm;
+  end;
+
+  begin
+    update public.posts
+    set like_count = 9
+    where id = current_setting('app.general_post')::uuid;
+    raise exception 'FAIL: client updated like_count';
+  exception
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      raise notice 'ok: update like_count blocked (%)', sqlerrm;
+  end;
+
+  begin
+    update public.posts
+    set comment_count = 9
+    where id = current_setting('app.general_post')::uuid;
+    raise exception 'FAIL: client updated comment_count';
+  exception
+    when others then
+      if sqlerrm like 'FAIL:%' then
+        raise;
+      end if;
+      raise notice 'ok: update comment_count blocked (%)', sqlerrm;
+  end;
 end $$;
 
 reset role;
@@ -333,11 +461,21 @@ do $$
 declare
   n int;
   new_id uuid;
+  likes int;
+  comments int;
 begin
   delete from public.comments where id = current_setting('app.comment_b')::uuid;
   get diagnostics n = row_count;
   if n <> 1 then
     raise exception 'FAIL: author could not delete their own comment';
+  end if;
+
+  select like_count, comment_count
+  into likes, comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if likes <> 1 or comments <> 0 then
+    raise exception 'FAIL: counters after deleting the comment are % / %', likes, comments;
   end if;
   raise notice 'ok: comment author can delete';
 
@@ -345,6 +483,13 @@ begin
   values (current_setting('app.general_post')::uuid, 'apaga esse, Ana')
   returning id into new_id;
   perform set_config('app.comment_b2', new_id::text, true);
+
+  select comment_count into comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if comments <> 1 then
+    raise exception 'FAIL: comment_count after a new comment is %', comments;
+  end if;
 end $$;
 
 reset role;
@@ -361,11 +506,21 @@ set local role authenticated;
 do $$
 declare
   n int;
+  likes int;
+  comments int;
 begin
   delete from public.comments where id = current_setting('app.comment_b2')::uuid;
   get diagnostics n = row_count;
   if n <> 1 then
     raise exception 'FAIL: post author could not delete someone else''s comment';
+  end if;
+
+  select like_count, comment_count
+  into likes, comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if likes <> 1 or comments <> 0 then
+    raise exception 'FAIL: counters after the post author deleted the comment are % / %', likes, comments;
   end if;
   raise notice 'ok: post author can delete a comment';
 
@@ -373,6 +528,14 @@ begin
   values (current_setting('app.campus_post')::uuid);
   insert into public.comments (post_id, text)
   values (current_setting('app.campus_post')::uuid, 'só a escola vê');
+
+  select like_count, comment_count
+  into likes, comments
+  from public.posts
+  where id = current_setting('app.campus_post')::uuid;
+  if likes <> 1 or comments <> 1 then
+    raise exception 'FAIL: campus counters before delete are % / %', likes, comments;
+  end if;
 
   delete from public.posts where id = current_setting('app.campus_post')::uuid;
   get diagnostics n = row_count;
@@ -387,11 +550,21 @@ do $$
 declare
   likes int;
   comments int;
+  stored_likes int;
+  stored_comments int;
 begin
   select count(*) into likes from public.likes where post_id = current_setting('app.campus_post')::uuid;
   select count(*) into comments from public.comments where post_id = current_setting('app.campus_post')::uuid;
   if likes <> 0 or comments <> 0 then
     raise exception 'FAIL: deleting the post left % likes and % comments', likes, comments;
+  end if;
+
+  select like_count, comment_count
+  into stored_likes, stored_comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if stored_likes <> 1 or stored_comments <> 0 then
+    raise exception 'FAIL: deleting another post changed counters to % / %', stored_likes, stored_comments;
   end if;
   raise notice 'ok: deleting a post removes likes and comments';
 end $$;
@@ -401,6 +574,8 @@ declare
   posts int;
   likes int;
   comments int;
+  stored_likes int;
+  stored_comments int;
 begin
   delete from public.profiles where id = current_setting('app.user_b')::uuid;
   select count(*) into likes from public.likes where user_id = current_setting('app.user_b')::uuid;
@@ -409,7 +584,49 @@ begin
   if likes <> 0 or comments <> 0 or posts <> 1 then
     raise exception 'FAIL: profile delete left likes %, comments %, post %', likes, comments, posts;
   end if;
+
+  select like_count, comment_count
+  into stored_likes, stored_comments
+  from public.posts
+  where id = current_setting('app.general_post')::uuid;
+  if stored_likes <> 0 or stored_comments <> 0 then
+    raise exception 'FAIL: profile delete left counters % / %', stored_likes, stored_comments;
+  end if;
   raise notice 'ok: deleting a profile removes that person''s likes and comments';
 end $$;
+
+grant insert (like_count, comment_count) on public.posts to authenticated;
+
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '11111111-1111-4111-8111-111111111111', 'role', 'authenticated')::text,
+  true
+);
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+set local role authenticated;
+
+do $$
+declare
+  new_id uuid;
+  likes int;
+  comments int;
+begin
+  insert into public.posts (text, to_general, to_campus, like_count, comment_count)
+  values ('contadores forjados', true, false, 9, 8)
+  returning id into new_id;
+
+  select like_count, comment_count
+  into likes, comments
+  from public.posts
+  where id = new_id;
+  if likes <> 0 or comments <> 0 then
+    raise exception 'FAIL: forged counters stored as % / %', likes, comments;
+  end if;
+
+  delete from public.posts where id = new_id;
+  raise notice 'ok: insert trigger forces counters to zero';
+end $$;
+
+reset role;
 
 rollback;

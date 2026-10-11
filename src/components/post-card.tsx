@@ -107,13 +107,20 @@ export function PostCard({
     const prevCount = likeCount;
     setLiked(next);
     setLikeCount(nextLikeCount(prevCount, next));
-    const result = await toggleLike(post.id, next);
-    likeLock.current = false;
-    setLikePending(false);
-    if (!result.ok) {
+    try {
+      const result = await toggleLike(post.id, next);
+      if (!result.ok) {
+        setLiked(prevLiked);
+        setLikeCount(prevCount);
+        setError("Não foi possível curtir. Tente de novo.");
+      }
+    } catch {
       setLiked(prevLiked);
       setLikeCount(prevCount);
-      setError(result.error);
+      setError("Não foi possível curtir. Tente de novo.");
+    } finally {
+      likeLock.current = false;
+      setLikePending(false);
     }
   }
 

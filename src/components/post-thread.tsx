@@ -54,8 +54,11 @@ export function PostThread({
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
   const router = useRouter();
+  const commentsRef = useRef(comments);
   const extraRef = useRef(extra);
+  commentsRef.current = comments;
   extraRef.current = extra;
   const count = charCount(text);
 
@@ -92,14 +95,19 @@ export function PostThread({
       return;
     }
     setPending(true);
-    const result = await createComment(post.id, body);
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const result = await createComment(post.id, body);
+      if (!result.ok) {
+        setError("Não foi possível comentar. Tente de novo.");
+        return;
+      }
+      setText("");
+      remember(result.comment);
+    } catch {
+      setError("Não foi possível comentar. Tente de novo.");
+    } finally {
+      setPending(false);
     }
-    setText("");
-    remember(result.comment);
   }
 
   async function onMore() {
@@ -124,10 +132,49 @@ export function PostThread({
     setCursor(result.nextCursor);
   }
 
-  function onDeleted(id: string) {
-    setComments((current) => current.filter((item) => item.id !== id));
-    setExtra((current) => current.filter((item) => item.id !== id));
+  function hideComment(comment: CommentItem): { restore: (message: string) => void } | null {
+    const inComments = commentsRef.current.some((item) => item.id === comment.id);
+    const where = inComments
+      ? "comments"
+      : extraRef.current.some((item) => item.id === comment.id)
+        ? "extra"
+        : null;
+    if (!where) return null;
+
+    if (where === "comments") {
+      const next = commentsRef.current.filter((item) => item.id !== comment.id);
+      commentsRef.current = next;
+      setComments(next);
+    } else {
+      const next = extraRef.current.filter((item) => item.id !== comment.id);
+      extraRef.current = next;
+      setExtra(next);
+    }
     bump(-1);
+    setDeleteErrors((current) => {
+      if (!current[comment.id]) return current;
+      const next = { ...current };
+      delete next[comment.id];
+      return next;
+    });
+
+    return {
+      restore(message: string) {
+        if (where === "comments") {
+          setComments((current) =>
+            current.some((item) => item.id === comment.id)
+              ? current
+              : [...current, comment].sort(byTime),
+          );
+        } else {
+          setExtra((current) =>
+            current.some((item) => item.id === comment.id) ? current : [...current, comment],
+          );
+        }
+        bump(1);
+        setDeleteErrors((current) => ({ ...current, [comment.id]: message }));
+      },
+    };
   }
 
   const shown = comments.length + extra.length;
@@ -152,7 +199,8 @@ export function PostThread({
               key={comment.id}
               comment={comment}
               canDelete={canDeleteComment(viewerId, comment.author.id, post.author.id)}
-              onDeleted={onDeleted}
+              onRemove={hideComment}
+              notice={deleteErrors[comment.id] ?? ""}
             />
           ))}
         </ul>
@@ -181,7 +229,8 @@ export function PostThread({
                 key={comment.id}
                 comment={comment}
                 canDelete={canDeleteComment(viewerId, comment.author.id, post.author.id)}
-                onDeleted={onDeleted}
+                onRemove={hideComment}
+                notice={deleteErrors[comment.id] ?? ""}
               />
             ))}
           </ul>
@@ -233,11 +282,13 @@ export function PostThread({
 function CommentRow({
   comment,
   canDelete,
-  onDeleted,
+  notice,
+  onRemove,
 }: {
   comment: CommentItem;
   canDelete: boolean;
-  onDeleted: (id: string) => void;
+  notice: string;
+  onRemove: (comment: CommentItem) => { restore: (message: string) => void } | null;
 }) {
   const [menu, setMenu] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -270,15 +321,23 @@ function CommentRow({
   }, [menu]);
 
   async function remove() {
+    if (pending) return;
     setPending(true);
     setError("");
-    const result = await deleteComment(comment.id);
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    const hidden = onRemove(comment);
+    const message = "Não foi possível apagar o comentário. Tente de novo.";
+    try {
+      const result = await deleteComment(comment.id);
+      if (!result.ok) {
+        if (hidden) hidden.restore(message);
+        else setError(message);
+      }
+    } catch {
+      if (hidden) hidden.restore(message);
+      else setError(message);
+    } finally {
+      setPending(false);
     }
-    onDeleted(comment.id);
   }
 
   return (
@@ -356,12 +415,12 @@ function CommentRow({
           ) : null}
         </div>
         <p className="whitespace-pre-wrap break-words text-[15px] leading-snug">{comment.text}</p>
-        {error ? (
+        {error || notice ? (
           <p
             role="alert"
             className="mt-2 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
           >
-            {error}
+            {error || notice}
           </p>
         ) : null}
       </div>
