@@ -9,6 +9,7 @@ import { getViewer } from "@/lib/viewer";
 const PAGE = 20;
 
 const FOLLOW_ERROR = "Não foi possível seguir este perfil.";
+const FOLLOW_RETRY = "Não foi possível seguir este perfil. Tente de novo.";
 const UNFOLLOW_ERROR = "Não foi possível deixar de seguir. Tente de novo.";
 
 type StatsRow = {
@@ -34,6 +35,11 @@ function asCount(value: number | string | null | undefined): number {
 function isDuplicateFollow(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   return error.code === "23505" || /duplicate key/i.test(error.message ?? "");
+}
+
+function followFailure(status: number | undefined): string {
+  if (status === 0 || (typeof status === "number" && status >= 500)) return FOLLOW_RETRY;
+  return FOLLOW_ERROR;
 }
 
 function refreshFollows(viewerId: string, profileId: string) {
@@ -80,8 +86,14 @@ export async function setFollow(
   if (!isUuid(profileId) || profileId === user.id) return { ok: false, error: fail };
 
   if (follow) {
-    const { error } = await supabase.from("follows").insert({ following_id: profileId });
-    if (error && !isDuplicateFollow(error)) return { ok: false, error: fail };
+    try {
+      const { error, status } = await supabase.from("follows").insert({ following_id: profileId });
+      if (error && !isDuplicateFollow(error)) {
+        return { ok: false, error: followFailure(status) };
+      }
+    } catch {
+      return { ok: false, error: FOLLOW_RETRY };
+    }
   } else {
     const { error } = await supabase
       .from("follows")

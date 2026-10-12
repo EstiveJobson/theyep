@@ -545,4 +545,224 @@ grant execute on function public.list_blocks(timestamptz, uuid, integer) to auth
 
 drop function if exists public.is_blocked_between(uuid, uuid);
 
+-- auth.uid() is volatile to the planner. (select auth.uid()) is one InitPlan,
+-- so list_posts can use the follows index on the Seguindo tab instead of
+-- scanning every follow. Behavior and security invoker stay the same.
+create or replace function public.list_posts(
+  p_tab text,
+  p_cursor_at timestamptz default null,
+  p_cursor_id uuid default null,
+  p_limit integer default 20
+)
+returns table (
+  id uuid,
+  author_id uuid,
+  text text,
+  photo_path text,
+  created_at timestamptz,
+  author_name text,
+  avatar_url text,
+  school_short_name text,
+  like_count bigint,
+  comment_count bigint,
+  liked_by_me boolean
+)
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select
+    p.id,
+    p.author_id,
+    p.text,
+    p.photo_path,
+    p.created_at,
+    pr.name,
+    pr.avatar_url,
+    s.short_name,
+    p.like_count,
+    p.comment_count,
+    exists (
+      select 1
+      from public.likes l
+      where l.post_id = p.id
+        and l.user_id = (select auth.uid())
+    )
+  from public.posts p
+  join public.profiles pr on pr.id = p.author_id
+  left join public.schools s on s.id = p.school_id
+  where p_tab in ('geral', 'campus', 'seguindo')
+    and (
+      (p_tab = 'geral' and p.to_general)
+      or (
+        p_tab = 'campus'
+        and p.to_campus
+        and p.school_id is not null
+        and p.school_id = (
+          select pf.school_id from public.profiles pf where pf.id = (select auth.uid())
+        )
+      )
+      or (
+        p_tab = 'seguindo'
+        and p.author_id in (
+          select f.following_id
+          from public.follows f
+          where f.follower_id = (select auth.uid())
+        )
+        and (
+          p.to_general
+          or (
+            p.to_campus
+            and p.school_id is not null
+            and p.school_id = (
+              select pf.school_id from public.profiles pf where pf.id = (select auth.uid())
+            )
+          )
+        )
+      )
+    )
+    and (
+      p_cursor_at is null
+      or (
+        p_cursor_id is not null
+        and (p.created_at, p.id) < (p_cursor_at, p_cursor_id)
+      )
+    )
+  order by p.created_at desc, p.id desc
+  limit least(greatest(coalesce(p_limit, 20), 1), 21);
+$$;
+
+revoke all on function public.list_posts(text, timestamptz, uuid, integer) from public, anon;
+grant execute on function public.list_posts(text, timestamptz, uuid, integer) to authenticated;
+
+create or replace function public.list_author_posts(
+  p_author uuid,
+  p_cursor_at timestamptz default null,
+  p_cursor_id uuid default null,
+  p_limit integer default 20
+)
+returns table (
+  id uuid,
+  author_id uuid,
+  text text,
+  photo_path text,
+  created_at timestamptz,
+  author_name text,
+  avatar_url text,
+  school_short_name text,
+  like_count bigint,
+  comment_count bigint,
+  liked_by_me boolean
+)
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select
+    p.id,
+    p.author_id,
+    p.text,
+    p.photo_path,
+    p.created_at,
+    pr.name,
+    pr.avatar_url,
+    s.short_name,
+    p.like_count,
+    p.comment_count,
+    exists (
+      select 1
+      from public.likes l
+      where l.post_id = p.id
+        and l.user_id = (select auth.uid())
+    )
+  from public.posts p
+  join public.profiles pr on pr.id = p.author_id
+  left join public.schools s on s.id = p.school_id
+  where p.author_id = p_author
+    and (
+      p_cursor_at is null
+      or (
+        p_cursor_id is not null
+        and (p.created_at, p.id) < (p_cursor_at, p_cursor_id)
+      )
+    )
+  order by p.created_at desc, p.id desc
+  limit least(greatest(coalesce(p_limit, 20), 1), 21);
+$$;
+
+revoke all on function public.list_author_posts(uuid, timestamptz, uuid, integer) from public, anon;
+grant execute on function public.list_author_posts(uuid, timestamptz, uuid, integer) to authenticated;
+
+create or replace function public.get_post(p_id uuid)
+returns table (
+  id uuid,
+  author_id uuid,
+  text text,
+  photo_path text,
+  created_at timestamptz,
+  author_name text,
+  avatar_url text,
+  school_short_name text,
+  like_count bigint,
+  comment_count bigint,
+  liked_by_me boolean
+)
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select
+    p.id,
+    p.author_id,
+    p.text,
+    p.photo_path,
+    p.created_at,
+    pr.name,
+    pr.avatar_url,
+    s.short_name,
+    p.like_count,
+    p.comment_count,
+    exists (
+      select 1
+      from public.likes l
+      where l.post_id = p.id
+        and l.user_id = (select auth.uid())
+    )
+  from public.posts p
+  join public.profiles pr on pr.id = p.author_id
+  left join public.schools s on s.id = p.school_id
+  where p.id = p_id;
+$$;
+
+revoke all on function public.get_post(uuid) from public, anon;
+grant execute on function public.get_post(uuid) to authenticated;
+
+create or replace function public.follow_stats(p_profile uuid)
+returns table (
+  followers bigint,
+  following_count bigint,
+  viewer_follows boolean
+)
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select
+    (select count(*) from public.follows f where f.following_id = p_profile),
+    (select count(*) from public.follows f where f.follower_id = p_profile),
+    exists (
+      select 1
+      from public.follows f
+      where f.follower_id = (select auth.uid())
+        and f.following_id = p_profile
+    );
+$$;
+
+revoke all on function public.follow_stats(uuid) from public, anon;
+grant execute on function public.follow_stats(uuid) to authenticated;
+
 notify pgrst, 'reload schema';

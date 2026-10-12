@@ -60,20 +60,19 @@ export function ProfileSocial({
       viewerFollows: next,
       followers: Math.max(0, stats.followers + (next ? 1 : -1)),
     });
-    const message = next
-      ? "Não foi possível seguir este perfil."
-      : "Não foi possível deixar de seguir. Tente de novo.";
+    const unfollowError = "Não foi possível deixar de seguir. Tente de novo.";
+    const followRetry = "Não foi possível seguir este perfil. Tente de novo.";
     try {
       const result = await setFollow(profileId, next);
       if (!result.ok) {
         setStats(prev);
-        setError(message);
+        setError(next ? result.error : unfollowError);
       } else {
         router.refresh();
       }
     } catch {
       setStats(prev);
-      setError(message);
+      setError(next ? followRetry : unfollowError);
     } finally {
       lock.current = false;
       setPending(false);
