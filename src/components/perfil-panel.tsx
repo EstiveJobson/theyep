@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { applyPendingSchool } from "@/lib/pending-school";
@@ -396,6 +397,12 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
             {error}
           </p>
         ) : null}
+        <Link
+          href="/configuracoes"
+          className="mt-4 inline-flex h-11 items-center text-sm font-bold text-blue-ink"
+        >
+          Configurações
+        </Link>
         <button
           type="button"
           onClick={() => void signOut()}
