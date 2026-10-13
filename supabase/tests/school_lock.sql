@@ -1,5 +1,6 @@
 -- Proves a user cannot edit school_id, and set_my_school works only once.
--- Run in the Supabase SQL Editor (as postgres) after 0003_security_fixes.sql.
+-- Run in the Supabase SQL Editor (as postgres) after 0007_pre_deploy.sql.
+-- The schools below belong to this test. The placeholders from 0001 are inactive.
 -- The script starts a transaction and rolls it back, so it leaves no data.
 -- A failing check aborts with FAIL: ...
 
@@ -14,10 +15,10 @@ create temp table qa_ids (
 insert into qa_ids
 select gen_random_uuid(), gen_random_uuid(), gen_random_uuid();
 
-insert into public.schools (id, name, short_name, active)
-select active_school, 'QA Ativa', 'QA', true from qa_ids
+insert into public.schools (id, name, short_name, slug, active)
+select active_school, 'QA Ativa', 'QA', 'qa-ativa', true from qa_ids
 union all
-select inactive_school, 'QA Inativa', 'OFF', false from qa_ids;
+select inactive_school, 'QA Inativa', 'OFF', 'qa-inativa', false from qa_ids;
 
 insert into auth.users (
   instance_id,

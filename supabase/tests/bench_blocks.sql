@@ -1,7 +1,8 @@
 -- Timings for the block checks. Safe to run in the SQL editor: it rolls back.
 -- About 10k blocks, 20k posts, 10k follows, and one post with 1000 comments.
 -- Prints Execution Time for the home feed, get_post, follow_stats, list_follows
--- and list_comments. Needs 0006 applied. Run as postgres, not as the API role.
+-- and list_comments. Needs 0007 applied. Run as postgres, not as the API role.
+-- The school below belongs to this test. The placeholders from 0001 are inactive.
 
 begin;
 
@@ -25,8 +26,8 @@ as $$
   )::uuid;
 $$;
 
-insert into public.schools (id, name, short_name, active)
-values ('c0000000-0000-4000-8000-000000000001', 'QA Bench Escola', 'QBE', true);
+insert into public.schools (id, name, short_name, slug, active)
+values ('c0000000-0000-4000-8000-000000000001', 'QA Bench Escola', 'QBE', 'qa-bench', true);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
