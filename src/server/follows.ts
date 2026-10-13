@@ -1,10 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { avatarForDisplay } from "@/lib/avatar-url";
 import { cleanCursor, type FeedCursor } from "@/lib/feed-cursor";
-import type { FollowDirection, FollowPerson, FollowStats } from "@/lib/follows";
+import {
+  LIST_ERROR,
+  type FollowDirection,
+  type FollowPerson,
+  type FollowStats,
+} from "@/lib/follows";
 import { isUuid } from "@/lib/ids";
 import { getViewer } from "@/lib/viewer";
+import { signAvatarValues } from "@/server/media";
 
 const PAGE = 20;
 
@@ -116,12 +123,12 @@ export async function loadFollowList(input: {
 > {
   const { supabase, user } = await getViewer();
   if (!supabase || !user) return { ok: false, error: "Entre para ver essa lista." };
-  if (!isUuid(input.profileId)) return { ok: false, error: "Não foi possível carregar a lista." };
+  if (!isUuid(input.profileId)) return { ok: false, error: LIST_ERROR };
   if (input.direction !== "seguidores" && input.direction !== "seguindo") {
-    return { ok: false, error: "Não foi possível carregar a lista." };
+    return { ok: false, error: LIST_ERROR };
   }
   if (input.cursor && !cleanCursor(input.cursor)) {
-    return { ok: false, error: "Não foi possível carregar a lista." };
+    return { ok: false, error: LIST_ERROR };
   }
   const cursor = cleanCursor(input.cursor);
 
@@ -132,14 +139,18 @@ export async function loadFollowList(input: {
     p_cursor_id: cursor?.id ?? null,
     p_limit: PAGE + 1,
   });
-  if (error) return { ok: false, error: "Não foi possível carregar a lista." };
+  if (error) return { ok: false, error: LIST_ERROR };
 
   const rows = ((data ?? []) as PersonRow[]).slice(0, PAGE + 1);
   const page = rows.slice(0, PAGE);
+  const avatars = await signAvatarValues(
+    supabase,
+    page.map((row) => ({ ownerId: row.profile_id, avatarUrl: row.avatar_url })),
+  );
   const people = page.map((row) => ({
     id: row.profile_id,
     name: row.name?.trim() || "Sem nome",
-    avatarUrl: row.avatar_url,
+    avatarUrl: avatarForDisplay(row.profile_id, avatars),
     schoolShortName: row.school_short_name?.trim() || null,
     followedAt: row.followed_at,
   }));

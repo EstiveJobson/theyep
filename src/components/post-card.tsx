@@ -3,10 +3,19 @@
 import { Heart, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { AvatarImage } from "@/components/avatar-image";
+import { subscribeSignedMedia } from "@/components/signed-media-refresh";
+import { postPhotoPath } from "@/lib/avatar-path";
 import { commentLabel, nextLikeCount } from "@/lib/engagement-rules";
+import {
+  imageAlreadyFailed,
+  imageRetryOnError,
+  imageRetryReset,
+  type ImageRetryState,
+} from "@/lib/image-retry";
 import { formatRelativePt } from "@/lib/relative-time";
 import type { FeedPost } from "@/server/posts";
-import { deletePost } from "@/server/posts";
+import { deletePost, refreshPostPhoto } from "@/server/posts";
 import { toggleLike } from "@/server/engagement";
 
 function initialOf(name: string): string {
@@ -29,6 +38,15 @@ export function PostCard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
+  const photoPath = postPhotoPath(post.photoUrl);
+  const photoUrlProp = useRef(post.photoUrl);
+  photoUrlProp.current = post.photoUrl;
+  const [photoUrl, setPhotoUrl] = useState(post.photoUrl);
+  const [photoBroken, setPhotoBroken] = useState(false);
+  const retryState = useRef<ImageRetryState>(imageRetryReset());
+  const photoRef = useRef<HTMLImageElement>(null);
+  const openPhotoRef = useRef<HTMLImageElement>(null);
+  const onPhotoErrorRef = useRef<() => void>(() => {});
   const [liked, setLiked] = useState(post.likedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [commentCount, setCommentCount] = useState(post.commentCount);
@@ -43,6 +61,34 @@ export function PostCard({
   useEffect(() => {
     setCommentCount(post.commentCount);
   }, [post.commentCount]);
+
+  useEffect(() => {
+    setPhotoUrl(photoUrlProp.current);
+    setPhotoBroken(false);
+    retryState.current = imageRetryReset();
+  }, [post.id, photoPath]);
+
+  useEffect(() => {
+    const thumb = photoRef.current;
+    if (imageAlreadyFailed(thumb)) onPhotoErrorRef.current();
+  }, [photoUrl, photoPath]);
+
+  useEffect(() => {
+    if (!photoOpen) return;
+    const open = openPhotoRef.current;
+    if (imageAlreadyFailed(open)) onPhotoErrorRef.current();
+  }, [photoOpen, photoUrl]);
+
+  useEffect(() => {
+    if (!photoPath) return;
+    return subscribeSignedMedia("post", post.id, (next) => {
+      retryState.current = imageRetryReset();
+      if (next) {
+        setPhotoUrl(next);
+        setPhotoBroken(false);
+      }
+    });
+  }, [post.id, photoPath]);
 
   useEffect(() => {
     setLiked(post.likedByMe);
@@ -84,6 +130,28 @@ export function PostCard({
       document.removeEventListener("keydown", onKey);
     };
   }, [photoOpen]);
+
+  onPhotoErrorRef.current = () => {
+    const decision = imageRetryOnError(retryState.current);
+    retryState.current = decision.state;
+    if (decision.action === "fallback") {
+      setPhotoBroken(true);
+      return;
+    }
+    void refreshPostPhoto(post.id).then((result) => {
+      if (!retryState.current.retried) return;
+      if (result.ok) {
+        setPhotoUrl(result.url);
+        setPhotoBroken(false);
+        return;
+      }
+      setPhotoBroken(true);
+    });
+  };
+
+  function onPhotoError() {
+    onPhotoErrorRef.current();
+  }
 
   async function remove() {
     setPending(true);
@@ -131,17 +199,17 @@ export function PostCard({
     <article className={`card relative p-4 ${menu ? "z-10" : ""}`}>
       <div className="flex items-start gap-2">
         <Link href={`/perfil/${post.author.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-          {post.author.avatarUrl ? (
-            <img
-              src={post.author.avatarUrl}
-              alt=""
-              className="size-10 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
-              {initialOf(post.author.name)}
-            </span>
-          )}
+          <AvatarImage
+            profileId={post.author.id}
+            src={post.author.avatarUrl}
+            alt=""
+            className="size-10 shrink-0 rounded-full object-cover"
+            fallback={
+              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
+                {initialOf(post.author.name)}
+              </span>
+            }
+          />
           <span className="min-w-0">
             <span className="block truncate font-extrabold">{post.author.name}</span>
             {meta ? <span className="block truncate text-sm text-muted">{meta}</span> : null}
@@ -205,7 +273,7 @@ export function PostCard({
       {post.text ? (
         <p className="mt-3 whitespace-pre-wrap break-words text-[15px] leading-snug">{post.text}</p>
       ) : null}
-      {post.photoUrl ? (
+      {photoUrl && !photoBroken ? (
         <button
           type="button"
           onClick={() => setPhotoOpen(true)}
@@ -213,15 +281,17 @@ export function PostCard({
           aria-label="Ver foto"
         >
           <img
-            src={post.photoUrl}
+            ref={photoRef}
+            src={photoUrl}
             alt="Foto do post"
             loading="lazy"
             decoding="async"
             className="max-h-96 w-full bg-line object-contain"
+            onError={onPhotoError}
           />
         </button>
       ) : null}
-      {post.photoMissing ? (
+      {photoBroken || (post.photoMissing && !photoUrl) ? (
         <p className="mt-3 text-sm text-muted">Não foi possível carregar a foto.</p>
       ) : null}
       <div className="mt-2 flex items-center gap-1">
@@ -260,7 +330,7 @@ export function PostCard({
           {error}
         </p>
       ) : null}
-      {photoOpen && post.photoUrl ? (
+      {photoOpen && photoUrl && !photoBroken ? (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4"
           role="dialog"
@@ -276,10 +346,12 @@ export function PostCard({
             Fechar
           </button>
           <img
-            src={post.photoUrl}
+            ref={openPhotoRef}
+            src={photoUrl}
             alt="Foto do post"
             className="max-h-[100dvh] max-w-full object-contain"
             onClick={(event) => event.stopPropagation()}
+            onError={onPhotoError}
           />
         </div>
       ) : null}

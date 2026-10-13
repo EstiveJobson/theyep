@@ -2,7 +2,7 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { compressPhoto, photoRejection } from "@/lib/compress-photo";
+import { compressPhoto, photoRejection, type CompressedPhoto } from "@/lib/compress-photo";
 import { rememberFeedTab } from "@/lib/feed-tab";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { createPost } from "@/server/posts";
@@ -38,13 +38,25 @@ export function Composer({ campusLabel }: { campusLabel: string | null }) {
   const [text, setText] = useState("");
   const [toGeneral, setToGeneral] = useState(true);
   const [toCampus, setToCampus] = useState(Boolean(campusLabel));
-  const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null);
+  const [photo, setPhoto] = useState<{
+    blob: Blob;
+    url: string;
+    contentType: CompressedPhoto["contentType"];
+    extension: CompressedPhoto["extension"];
+  } | null>(null);
   const [preparing, setPreparing] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const count = charCount(text);
 
-  function replacePhoto(next: { blob: Blob; url: string } | null) {
+  function replacePhoto(
+    next: {
+      blob: Blob;
+      url: string;
+      contentType: CompressedPhoto["contentType"];
+      extension: CompressedPhoto["extension"];
+    } | null,
+  ) {
     setPhoto((current) => {
       if (current && current !== next) URL.revokeObjectURL(current.url);
       return next;
@@ -63,8 +75,13 @@ export function Composer({ campusLabel }: { campusLabel: string | null }) {
     }
     setPreparing(true);
     try {
-      const blob = await compressPhoto(file);
-      replacePhoto({ blob, url: URL.createObjectURL(blob) });
+      const image = await compressPhoto(file);
+      replacePhoto({
+        blob: image.blob,
+        url: URL.createObjectURL(image.blob),
+        contentType: image.contentType,
+        extension: image.extension,
+      });
     } catch {
       setError("Não foi possível preparar essa foto. Use JPEG, PNG ou WebP.");
     } finally {
@@ -113,11 +130,11 @@ export function Composer({ campusLabel }: { campusLabel: string | null }) {
     let published = false;
     try {
       if (photo) {
-        const path = `${auth.user.id}/${crypto.randomUUID()}.jpg`;
+        const path = `${auth.user.id}/${crypto.randomUUID()}.${photo.extension}`;
         const { error: uploadError } = await supabase.storage
           .from("post-photos")
           .upload(path, photo.blob, {
-            contentType: "image/jpeg",
+            contentType: photo.contentType,
             cacheControl: "3600",
             upsert: false,
           });

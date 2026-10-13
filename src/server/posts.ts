@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { isOwnPhotoPath, isUuid } from "@/lib/ids";
 import { cleanCursor, type FeedCursor } from "@/lib/feed-cursor";
-import { mapPostRow, type PostRow } from "@/lib/map-post";
+import type { PostRow } from "@/lib/map-post";
 import { getViewer } from "@/lib/viewer";
 import type { FeedTab } from "@/lib/feed-tab";
+import { signFeedPosts, signObjectPaths } from "@/server/media";
 
 export type { FeedCursor };
 
@@ -27,31 +28,9 @@ export type FeedPost = {
 };
 
 const PAGE = 20;
-const SIGNED_URL_SECONDS = 900;
 
 function charCount(value: string): number {
   return [...value].length;
-}
-
-async function withSignedPhotos(
-  supabase: NonNullable<Awaited<ReturnType<typeof getViewer>>["supabase"]>,
-  rows: PostRow[],
-) {
-  const paths = rows.map((row) => row.photo_path).filter((path): path is string => Boolean(path));
-  const signed = new Map<string, string>();
-  if (paths.length === 0) return rows.map((row) => mapPostRow(row, signed));
-
-  const { data: files } = await supabase.storage
-    .from("post-photos")
-    .createSignedUrls(paths, SIGNED_URL_SECONDS);
-  for (const [index, file] of (files ?? []).entries()) {
-    if (!file.signedUrl) continue;
-    const key = file.path || paths[index];
-    if (key) signed.set(key, file.signedUrl);
-    const requested = paths[index];
-    if (requested) signed.set(requested, file.signedUrl);
-  }
-  return rows.map((row) => mapPostRow(row, signed));
 }
 
 export async function loadFeed(input: {
@@ -87,7 +66,7 @@ export async function loadFeed(input: {
 
   const rows = ((data ?? []) as PostRow[]).slice(0, PAGE + 1);
   const page = rows.slice(0, PAGE);
-  const posts = await withSignedPhotos(supabase, page);
+  const posts = await signFeedPosts(supabase, page);
   const last = posts.length === PAGE ? page[PAGE - 1] : null;
   const nextCursor =
     rows.length > PAGE && last ? { createdAt: last.created_at, id: last.id } : null;
@@ -174,4 +153,21 @@ export async function deletePost(id: string): Promise<{ ok: true } | { ok: false
   revalidatePath("/");
   revalidatePath(`/post/${id}`);
   return { ok: true };
+}
+
+export async function refreshPostPhoto(
+  postId: string,
+): Promise<{ ok: true; url: string } | { ok: false }> {
+  const { supabase, user } = await getViewer();
+  if (!supabase || !user || !isUuid(postId)) return { ok: false };
+
+  const { data, error } = await supabase.rpc("get_post", { p_id: postId });
+  if (error) return { ok: false };
+  const row = ((data ?? []) as PostRow[])[0];
+  if (!row?.photo_path) return { ok: false };
+
+  const signed = await signObjectPaths(supabase, "post-photos", [row.photo_path]);
+  const url = signed.get(row.photo_path);
+  if (!url) return { ok: false };
+  return { ok: true, url };
 }

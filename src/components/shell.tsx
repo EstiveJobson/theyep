@@ -3,8 +3,9 @@
 import { Home, Plus, UserRound, Moon, Sun } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { INACTIVE_SCHOOL_NOTICE, PENDING_NOTICE_COOKIE } from "@/lib/pending-school-plan";
 
 const THEME_KEY = "theyep-theme";
 
@@ -92,8 +93,24 @@ function TabLink({
   );
 }
 
-export function Shell({ children }: { children: ReactNode }) {
+export function Shell({
+  children,
+  schoolNotice = false,
+}: {
+  children: ReactNode;
+  schoolNotice?: boolean;
+}) {
   const pathname = usePathname();
+  const [notice, setNotice] = useState(schoolNotice);
+
+  useEffect(() => {
+    const fromCookie = document.cookie
+      .split("; ")
+      .some((part) => part.startsWith(`${PENDING_NOTICE_COOKIE}=`));
+    if (!schoolNotice && !fromCookie) return;
+    setNotice(true);
+    document.cookie = `${PENDING_NOTICE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+  }, [schoolNotice]);
 
   return (
     <>
@@ -125,7 +142,17 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="page-main shell px-4 pt-4">{children}</main>
+      <main className="page-main shell px-4 pt-4">
+        {notice ? (
+          <p
+            role="status"
+            className="mb-3 rounded-lg bg-yellow px-3 py-2 text-sm font-semibold text-on-accent"
+          >
+            {INACTIVE_SCHOOL_NOTICE}
+          </p>
+        ) : null}
+        {children}
+      </main>
       <nav
         className="tabbar fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg md:hidden"
         aria-label="Navegação principal"

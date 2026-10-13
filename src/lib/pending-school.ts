@@ -1,9 +1,13 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { isUuid } from "@/lib/ids";
+import {
+  pendingMetadataAction,
+  planPendingRpc,
+  type PendingRpcPlan,
+} from "./pending-school-plan.ts";
 
 export const PENDING_SCHOOL_KEY = "pending_school_id";
 
-export type PendingSchoolResult = "applied" | "cleared" | "skipped" | "retry";
+export type PendingSchoolResult = "applied" | "cleared" | "inactive" | "skipped" | "retry";
 
 const inflight = new Map<string, Promise<PendingSchoolResult>>();
 
@@ -11,16 +15,8 @@ export function readPendingSchoolId(
   metadata: User["user_metadata"] | null | undefined,
 ): string | null {
   const value = metadata?.[PENDING_SCHOOL_KEY];
-  if (typeof value !== "string") return null;
-  const id = value.trim();
-  return isUuid(id) ? id : null;
-}
-
-function isDefinitiveSchoolError(message: string): boolean {
-  const text = message.toLowerCase();
-  return (
-    text.includes("already chosen") || text.includes("inactive") || text.includes("does not exist")
-  );
+  if (pendingMetadataAction(value) !== "apply") return null;
+  return typeof value === "string" ? value.trim() : null;
 }
 
 async function clearPendingSchool(supabase: SupabaseClient): Promise<void> {
@@ -30,23 +26,47 @@ async function clearPendingSchool(supabase: SupabaseClient): Promise<void> {
   if (error) throw error;
 }
 
-async function applyNow(supabase: SupabaseClient, user: User): Promise<PendingSchoolResult> {
-  const schoolId = readPendingSchoolId(user.user_metadata);
-  if (!schoolId) return "skipped";
-
-  const { error } = await supabase.rpc("set_my_school", { p_school: schoolId });
-  const definitive =
-    !error ||
-    isDefinitiveSchoolError(`${error.message} ${error.details ?? ""} ${error.hint ?? ""}`);
-  if (!definitive) return "retry";
+async function finishPlan(
+  supabase: SupabaseClient,
+  plan: PendingRpcPlan,
+): Promise<PendingSchoolResult> {
+  if (plan.action === "retry") return "retry";
 
   try {
     await clearPendingSchool(supabase);
   } catch (clearError) {
     console.error("pending school clear failed", clearError);
-    if (error) return "retry";
+    return "retry";
   }
-  return error ? "cleared" : "applied";
+
+  if (plan.action === "ok") return "applied";
+  if (plan.action === "clear") return plan.notice === "inactive" ? "inactive" : "cleared";
+
+  const unreachable: never = plan;
+  return unreachable;
+}
+
+async function applyNow(supabase: SupabaseClient, user: User): Promise<PendingSchoolResult> {
+  const raw = user.user_metadata?.[PENDING_SCHOOL_KEY];
+  const metadataAction = pendingMetadataAction(raw);
+  if (metadataAction === "skip") return "skipped";
+  if (metadataAction === "clear") {
+    return finishPlan(supabase, { action: "clear", notice: null });
+  }
+
+  const schoolId = typeof raw === "string" ? raw.trim() : "";
+  try {
+    const { error, status } = await supabase.rpc("set_my_school", { p_school: schoolId });
+    const plan = planPendingRpc({
+      ok: !error,
+      status,
+      message: error ? `${error.message} ${error.details ?? ""} ${error.hint ?? ""}` : "",
+    });
+    return finishPlan(supabase, plan);
+  } catch (error) {
+    console.error("pending school", error);
+    return "retry";
+  }
 }
 
 // Applies a signup choice with set_my_school. handle_new_user does not write school_id.
@@ -63,9 +83,10 @@ export async function applyPendingSchool(
     }
 
     const schoolId = readPendingSchoolId(user.user_metadata);
-    if (!schoolId) return "skipped";
+    const metadataAction = pendingMetadataAction(user.user_metadata?.[PENDING_SCHOOL_KEY]);
+    if (metadataAction === "skip") return "skipped";
 
-    const key = `${user.id}:${schoolId}`;
+    const key = `${user.id}:${schoolId ?? "invalid"}`;
     const existing = inflight.get(key);
     if (existing) return existing;
 

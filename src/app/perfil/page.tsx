@@ -5,7 +5,7 @@ import { getViewer } from "@/lib/viewer";
 import { getFollowStats } from "@/server/follows";
 
 export default async function PerfilPage() {
-  const { user } = await getViewer();
+  const { user, avatarUrl } = await getViewer();
   let followStats: FollowStats | null = null;
   if (user) {
     const stats = await getFollowStats(user.id);
@@ -14,7 +14,7 @@ export default async function PerfilPage() {
   return (
     <div className="space-y-3">
       <PerfilPanel followStats={followStats} />
-      {user ? <AuthorPosts authorId={user.id} viewerId={user.id} /> : null}
+      {user ? <AuthorPosts key={avatarUrl ?? ""} authorId={user.id} viewerId={user.id} /> : null}
     </div>
   );
 }

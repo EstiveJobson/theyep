@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { avatarForDisplay } from "@/lib/avatar-url";
 import { isDuplicateBlock, type BlockedPerson } from "@/lib/blocks";
 import { cleanCursor, type FeedCursor } from "@/lib/feed-cursor";
 import { isUuid } from "@/lib/ids";
 import { getViewer } from "@/lib/viewer";
+import { signAvatarValues } from "@/server/media";
 
 const PAGE = 20;
 const BLOCK_ERROR = "Não foi possível bloquear. Tente de novo.";
@@ -76,10 +78,14 @@ export async function loadBlocks(input: {
 
   const rows = ((data ?? []) as BlockRow[]).slice(0, PAGE + 1);
   const page = rows.slice(0, PAGE);
+  const avatars = await signAvatarValues(
+    supabase,
+    page.map((row) => ({ ownerId: row.profile_id, avatarUrl: row.avatar_url })),
+  );
   const people = page.map((row) => ({
     id: row.profile_id,
     name: row.name?.trim() || "Sem nome",
-    avatarUrl: row.avatar_url,
+    avatarUrl: avatarForDisplay(row.profile_id, avatars),
     blockedAt: row.blocked_at,
   }));
   const last = people.length === PAGE ? page[PAGE - 1] : null;

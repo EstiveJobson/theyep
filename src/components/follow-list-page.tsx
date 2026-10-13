@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FollowList } from "@/components/follow-list";
-import type { FollowDirection } from "@/lib/follows";
+import { LIST_ERROR, type FollowDirection } from "@/lib/follows";
 import { isUuid } from "@/lib/ids";
 import { getViewer } from "@/lib/viewer";
 import { loadFollowList } from "@/server/follows";
@@ -50,7 +50,7 @@ export async function FollowListPage({
   if (error) {
     return (
       <section className="card px-6 py-10 text-center">
-        <h1 className="text-lg font-extrabold">Não foi possível carregar a lista</h1>
+        <h1 className="text-lg font-extrabold">{LIST_ERROR}</h1>
       </section>
     );
   }
@@ -72,7 +72,7 @@ export async function FollowListPage({
         direction={direction}
         initialPeople={result.ok ? result.people : []}
         initialCursor={result.ok ? result.nextCursor : null}
-        initialError={result.ok ? "" : result.error}
+        initialError={result.ok ? "" : LIST_ERROR}
       />
     </div>
   );

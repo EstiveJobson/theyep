@@ -1,9 +1,16 @@
-const MAX_EDGE = 1600;
-const TARGET_BYTES = 1_000_000;
+export const POST_PHOTO_EDGE = 1080;
+export const AVATAR_EDGE = 320;
+const QUALITY = 0.8;
 const HARD_BYTES = 2 * 1024 * 1024;
 const SOURCE_LIMIT = 30 * 1024 * 1024;
 
 export const PHOTO_REJECTED = "Por enquanto só dá para postar fotos.";
+
+export type CompressedPhoto = {
+  blob: Blob;
+  contentType: "image/webp" | "image/jpeg";
+  extension: "webp" | "jpg";
+};
 
 export function photoRejection(file: File): string | null {
   const type = file.type.toLowerCase();
@@ -24,20 +31,17 @@ export function photoRejection(file: File): string | null {
   return null;
 }
 
-function toJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("empty"));
-      },
-      "image/jpeg",
-      quality,
-    );
+function canvasBlob(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number,
+): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), type, quality);
   });
 }
 
-async function render(file: File, edge: number, quality: number): Promise<Blob> {
+async function draw(file: File, edge: number): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   try {
     const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
@@ -51,30 +55,41 @@ async function render(file: File, edge: number, quality: number): Promise<Blob> 
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, width, height);
     context.drawImage(bitmap, 0, 0, width, height);
-    return await toJpeg(canvas, quality);
+    return canvas;
   } finally {
     bitmap.close();
   }
 }
 
-/** Longest side 1600px, JPEG, about 1 MB. Throws if the browser cannot read the file. */
-export async function compressPhoto(file: File): Promise<Blob> {
-  let edge = MAX_EDGE;
-  let quality = 0.86;
-  let blob = await render(file, edge, quality);
+async function encode(canvas: HTMLCanvasElement): Promise<CompressedPhoto> {
+  const webp = await canvasBlob(canvas, "image/webp", QUALITY);
+  if (webp && webp.size > 0 && webp.type === "image/webp") {
+    return { blob: webp, contentType: "image/webp", extension: "webp" };
+  }
+  const jpeg = await canvasBlob(canvas, "image/jpeg", QUALITY);
+  if (!jpeg || jpeg.size === 0) throw new Error("empty");
+  return { blob: jpeg, contentType: "image/jpeg", extension: "jpg" };
+}
 
-  while (blob.size > TARGET_BYTES && quality > 0.5) {
-    quality = Math.round((quality - 0.12) * 100) / 100;
-    blob = await render(file, edge, quality);
+/**
+ * WebP at quality 0.8, or JPEG at 0.8 when the browser cannot encode WebP.
+ * Posts use 1080px. Avatars use 320px. Files already stored are left as they are.
+ */
+export async function compressPhoto(
+  file: File,
+  maxEdge = POST_PHOTO_EDGE,
+): Promise<CompressedPhoto> {
+  let edge = maxEdge;
+  const floor = Math.min(480, Math.max(1, Math.round(maxEdge / 2)));
+  let image = await encode(await draw(file, edge));
+
+  while (image.blob.size > HARD_BYTES && edge > floor) {
+    const next = Math.max(floor, Math.round(edge * 0.75));
+    if (next === edge) break;
+    edge = next;
+    image = await encode(await draw(file, edge));
   }
 
-  while (blob.size > TARGET_BYTES && edge > 800) {
-    edge = Math.round(edge * 0.75);
-    blob = await render(file, edge, quality);
-  }
-
-  if (blob.size > HARD_BYTES) {
-    throw new Error("large");
-  }
-  return blob;
+  if (image.blob.size > HARD_BYTES) throw new Error("large");
+  return image;
 }
