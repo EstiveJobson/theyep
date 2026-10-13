@@ -4,6 +4,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthorPosts } from "@/components/author-posts";
+import { AvatarImage } from "@/components/avatar-image";
 import { ProfileSocial } from "@/components/profile-social";
 import type { FollowStats } from "@/lib/follows";
 import { setBlock } from "@/server/blocks";
@@ -75,7 +76,8 @@ export function PublicProfile({
   }
 
   const photo = profile.avatarUrl ? (
-    <img
+    <AvatarImage
+      profileId={profile.id}
       src={profile.avatarUrl}
       alt={profile.name === "Sem nome" ? "Foto do perfil" : `Foto de ${profile.name}`}
       className="size-16 rounded-full object-cover"

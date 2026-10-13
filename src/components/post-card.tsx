@@ -3,10 +3,12 @@
 import { Heart, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { AvatarImage } from "@/components/avatar-image";
 import { commentLabel, nextLikeCount } from "@/lib/engagement-rules";
 import { formatRelativePt } from "@/lib/relative-time";
+import { SIGNED_URL_REFRESH_MS } from "@/lib/signed-url";
 import type { FeedPost } from "@/server/posts";
-import { deletePost } from "@/server/posts";
+import { deletePost, refreshPostPhoto } from "@/server/posts";
 import { toggleLike } from "@/server/engagement";
 
 function initialOf(name: string): string {
@@ -29,6 +31,10 @@ export function PostCard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState(post.photoUrl);
+  const [photoBroken, setPhotoBroken] = useState(false);
+  const retriedPhoto = useRef<string | null>(null);
+  const photoRefresh = useRef(false);
   const [liked, setLiked] = useState(post.likedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [commentCount, setCommentCount] = useState(post.commentCount);
@@ -43,6 +49,24 @@ export function PostCard({
   useEffect(() => {
     setCommentCount(post.commentCount);
   }, [post.commentCount]);
+
+  useEffect(() => {
+    setPhotoUrl(post.photoUrl);
+    setPhotoBroken(false);
+    retriedPhoto.current = null;
+  }, [post.id, post.photoUrl]);
+
+  useEffect(() => {
+    if (!post.photoUrl) return;
+    const id = window.setInterval(() => {
+      void refreshPostPhoto(post.id).then((result) => {
+        if (!result.ok) return;
+        setPhotoUrl(result.url);
+        setPhotoBroken(false);
+      });
+    }, SIGNED_URL_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [post.id, post.photoUrl]);
 
   useEffect(() => {
     setLiked(post.likedByMe);
@@ -84,6 +108,29 @@ export function PostCard({
       document.removeEventListener("keydown", onKey);
     };
   }, [photoOpen]);
+
+  function onPhotoError() {
+    if (!photoUrl) {
+      setPhotoBroken(true);
+      return;
+    }
+    if (retriedPhoto.current === photoUrl) {
+      if (!photoRefresh.current) setPhotoBroken(true);
+      return;
+    }
+    const failed = photoUrl;
+    retriedPhoto.current = failed;
+    photoRefresh.current = true;
+    void refreshPostPhoto(post.id).then((result) => {
+      photoRefresh.current = false;
+      if (result.ok && result.url !== failed) {
+        setPhotoUrl(result.url);
+        setPhotoBroken(false);
+        return;
+      }
+      setPhotoBroken(true);
+    });
+  }
 
   async function remove() {
     setPending(true);
@@ -132,7 +179,8 @@ export function PostCard({
       <div className="flex items-start gap-2">
         <Link href={`/perfil/${post.author.id}`} className="flex min-w-0 flex-1 items-center gap-3">
           {post.author.avatarUrl ? (
-            <img
+            <AvatarImage
+              profileId={post.author.id}
               src={post.author.avatarUrl}
               alt=""
               className="size-10 shrink-0 rounded-full object-cover"
@@ -205,7 +253,7 @@ export function PostCard({
       {post.text ? (
         <p className="mt-3 whitespace-pre-wrap break-words text-[15px] leading-snug">{post.text}</p>
       ) : null}
-      {post.photoUrl ? (
+      {photoUrl && !photoBroken ? (
         <button
           type="button"
           onClick={() => setPhotoOpen(true)}
@@ -213,15 +261,16 @@ export function PostCard({
           aria-label="Ver foto"
         >
           <img
-            src={post.photoUrl}
+            src={photoUrl}
             alt="Foto do post"
             loading="lazy"
             decoding="async"
             className="max-h-96 w-full bg-line object-contain"
+            onError={onPhotoError}
           />
         </button>
       ) : null}
-      {post.photoMissing ? (
+      {photoBroken || (post.photoMissing && !photoUrl) ? (
         <p className="mt-3 text-sm text-muted">Não foi possível carregar a foto.</p>
       ) : null}
       <div className="mt-2 flex items-center gap-1">
@@ -260,7 +309,7 @@ export function PostCard({
           {error}
         </p>
       ) : null}
-      {photoOpen && post.photoUrl ? (
+      {photoOpen && photoUrl && !photoBroken ? (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4"
           role="dialog"
@@ -276,10 +325,11 @@ export function PostCard({
             Fechar
           </button>
           <img
-            src={post.photoUrl}
+            src={photoUrl}
             alt="Foto do post"
             className="max-h-[100dvh] max-w-full object-contain"
             onClick={(event) => event.stopPropagation()}
+            onError={onPhotoError}
           />
         </div>
       ) : null}

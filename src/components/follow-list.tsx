@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import type { FeedCursor } from "@/lib/feed-cursor";
-import type { FollowDirection, FollowPerson } from "@/lib/follows";
+import { LIST_ERROR, type FollowDirection, type FollowPerson } from "@/lib/follows";
+import { AvatarImage } from "@/components/avatar-image";
 import { loadFollowList } from "@/server/follows";
 
 function initialOf(name: string): string {
   return (name.trim().charAt(0) || "Y").toUpperCase();
 }
-
-const LIST_ERROR = "Não foi possível carregar a lista. Tente de novo.";
 
 export function FollowList({
   profileId,
@@ -112,7 +111,8 @@ export function FollowList({
           <li key={person.id}>
             <Link href={`/perfil/${person.id}`} className="flex items-center gap-3 px-4 py-3">
               {person.avatarUrl ? (
-                <img
+                <AvatarImage
+                  profileId={person.id}
                   src={person.avatarUrl}
                   alt=""
                   className="size-10 shrink-0 rounded-full object-cover"

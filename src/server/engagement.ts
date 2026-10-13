@@ -8,9 +8,11 @@ import {
   isDuplicateLike,
   normalizeComment,
 } from "@/lib/engagement-rules";
+import { avatarForDisplay } from "@/lib/avatar-url";
 import { isUuid } from "@/lib/ids";
-import { mapPostRow, type PostRow } from "@/lib/map-post";
+import type { PostRow } from "@/lib/map-post";
 import type { FeedPost } from "@/server/posts";
+import { signAvatarValues, signFeedPosts } from "@/server/media";
 import { getViewer } from "@/lib/viewer";
 
 export type CommentItem = {
@@ -35,9 +37,8 @@ type CommentRow = {
 
 const POST_PAGE = 20;
 const COMMENT_PAGE = 50;
-const SIGNED_URL_SECONDS = 900;
 
-function mapComment(row: CommentRow): CommentItem {
+function mapComment(row: CommentRow, avatars: Map<string, string>): CommentItem {
   return {
     id: row.id,
     text: row.text,
@@ -45,30 +46,9 @@ function mapComment(row: CommentRow): CommentItem {
     author: {
       id: row.user_id,
       name: row.author_name?.trim() || "Sem nome",
-      avatarUrl: row.avatar_url,
+      avatarUrl: avatarForDisplay(row.avatar_url, avatars),
     },
   };
-}
-
-async function signRows(
-  supabase: NonNullable<Awaited<ReturnType<typeof getViewer>>["supabase"]>,
-  rows: PostRow[],
-): Promise<FeedPost[]> {
-  const paths = rows.map((row) => row.photo_path).filter((path): path is string => Boolean(path));
-  const signed = new Map<string, string>();
-  if (paths.length > 0) {
-    const { data: files } = await supabase.storage
-      .from("post-photos")
-      .createSignedUrls(paths, SIGNED_URL_SECONDS);
-    for (const [index, file] of (files ?? []).entries()) {
-      if (!file.signedUrl) continue;
-      const key = file.path || paths[index];
-      if (key) signed.set(key, file.signedUrl);
-      const requested = paths[index];
-      if (requested) signed.set(requested, file.signedUrl);
-    }
-  }
-  return rows.map((row) => mapPostRow(row, signed));
 }
 
 export async function loadAuthorPosts(input: {
@@ -98,7 +78,7 @@ export async function loadAuthorPosts(input: {
 
   const rows = ((data ?? []) as PostRow[]).slice(0, POST_PAGE + 1);
   const page = rows.slice(0, POST_PAGE);
-  const posts = await signRows(supabase, page);
+  const posts = await signFeedPosts(supabase, page);
   const last = posts.length === POST_PAGE ? page[POST_PAGE - 1] : null;
   const nextCursor =
     rows.length > POST_PAGE && last ? { createdAt: last.created_at, id: last.id } : null;
@@ -122,7 +102,12 @@ async function loadCommentPage(
   if (error) return { ok: false, error: "Não foi possível carregar os comentários." };
 
   const rows = ((data ?? []) as CommentRow[]).slice(0, COMMENT_PAGE + 1);
-  const page = rows.slice(0, COMMENT_PAGE).map(mapComment);
+  const pageRows = rows.slice(0, COMMENT_PAGE);
+  const avatars = await signAvatarValues(
+    supabase,
+    pageRows.map((row) => row.avatar_url),
+  );
+  const page = pageRows.map((row) => mapComment(row, avatars));
   const last = page.length === COMMENT_PAGE ? rows[COMMENT_PAGE - 1] : null;
   const nextCursor =
     rows.length > COMMENT_PAGE && last ? { createdAt: last.created_at, id: last.id } : null;
@@ -152,7 +137,7 @@ export async function loadPostPage(
   const row = ((data ?? []) as PostRow[])[0];
   if (!row) return { ok: false, notFound: true, error: "Post não encontrado" };
 
-  const [post] = await signRows(supabase, [row]);
+  const [post] = await signFeedPosts(supabase, [row]);
   const comments = await loadCommentPage(supabase, id, null);
   if (!comments.ok) return { ok: false, notFound: false, error: comments.error };
   return { ok: true, post, comments: comments.comments, nextCursor: comments.nextCursor };
@@ -238,6 +223,7 @@ export async function createComment(
     .eq("id", user.id)
     .maybeSingle();
   const author = profile as { name: string | null; avatar_url: string | null } | null;
+  const avatars = await signAvatarValues(supabase, [author?.avatar_url ?? null]);
 
   revalidatePath("/");
   revalidatePath(`/post/${postId}`);
@@ -250,7 +236,7 @@ export async function createComment(
       author: {
         id: row.user_id,
         name: author?.name?.trim() || "Sem nome",
-        avatarUrl: author?.avatar_url ?? null,
+        avatarUrl: avatarForDisplay(author?.avatar_url ?? null, avatars),
       },
     },
   };

@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AvatarImage } from "@/components/avatar-image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
+import { signAvatarDisplayUrl } from "@/lib/avatar-url";
+import { compressPhoto, photoRejection, PHOTO_REJECTED } from "@/lib/compress-photo";
 import { applyPendingSchool } from "@/lib/pending-school";
+import { INACTIVE_SCHOOL_NOTICE } from "@/lib/pending-school-plan";
 import { ProfileSocial } from "@/components/profile-social";
 import type { FollowStats } from "@/lib/follows";
 import { firstRelation } from "@/lib/relation";
@@ -72,10 +76,13 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [schools, setSchools] = useState<SchoolOption[]>([]);
   const [schoolsLoading, setSchoolsLoading] = useState(false);
+  const [schoolsLoaded, setSchoolsLoaded] = useState(false);
   const [schoolsError, setSchoolsError] = useState("");
   const [pickingSchool, setPickingSchool] = useState(false);
   const [schoolChoice, setSchoolChoice] = useState("");
   const [savingSchool, setSavingSchool] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!configured) return;
@@ -108,8 +115,11 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
         setProfile(null);
         setError("Não foi possível carregar o perfil.");
       } else {
-        setProfile((data as Profile | null) ?? null);
-        setError("");
+        const row = (data as Profile | null) ?? null;
+        const avatarUrl = row ? await signAvatarDisplayUrl(supabase, row.avatar_url) : null;
+        if (!alive) return;
+        setProfile(row ? { ...row, avatar_url: avatarUrl } : null);
+        setError(pendingResult === "inactive" ? INACTIVE_SCHOOL_NOTICE : "");
       }
       setLoading(false);
       if (pendingResult === "applied") router.refresh();
@@ -144,12 +154,14 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
 
     let alive = true;
     setSchoolsLoading(true);
+    setSchoolsLoaded(false);
     setSchoolsError("");
     void listActiveSchools(supabase).then((result) => {
       if (!alive) return;
       setSchools(result.schools);
       setSchoolsError(result.error ?? "");
       setSchoolsLoading(false);
+      setSchoolsLoaded(true);
     });
 
     return () => {
@@ -205,6 +217,7 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
       }
       if (data.session) {
         const result = await applyPendingSchool(supabase, data.session.user);
+        if (result === "inactive") setError(INACTIVE_SCHOOL_NOTICE);
         if (result === "applied") router.refresh();
         return;
       }
@@ -224,6 +237,54 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
     });
     setPending(false);
     if (signInError) setError(authErrorMessage(signInError.message));
+  }
+
+  async function onAvatar(file: File | undefined) {
+    setError("");
+    if (!file || !user) return;
+    const rejected = photoRejection(file);
+    if (rejected) {
+      setError(rejected === PHOTO_REJECTED ? "Por enquanto só dá para usar fotos." : rejected);
+      if (avatarRef.current) avatarRef.current.value = "";
+      return;
+    }
+    const supabase = getBrowserClient();
+    if (!supabase) {
+      setError("Não foi possível enviar a foto. Tente de novo.");
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const image = await compressPhoto(file);
+      const path = `${user.id}/${crypto.randomUUID()}.${image.extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, image.blob, {
+          contentType: image.contentType,
+          cacheControl: "3600",
+          upsert: false,
+        });
+      if (uploadError) {
+        setError("Não foi possível enviar a foto. Tente de novo.");
+        return;
+      }
+      const { error: saveError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: path })
+        .eq("id", user.id);
+      if (saveError) {
+        await supabase.storage.from("avatars").remove([path]);
+        setError("Não foi possível enviar a foto. Tente de novo.");
+        return;
+      }
+      const signed = await signAvatarDisplayUrl(supabase, path);
+      setProfile((current) => (current ? { ...current, avatar_url: signed } : current));
+    } catch {
+      setError("Não foi possível preparar essa foto. Use JPEG, PNG ou WebP.");
+    } finally {
+      setAvatarBusy(false);
+      if (avatarRef.current) avatarRef.current.value = "";
+    }
   }
 
   async function signOut() {
@@ -251,12 +312,18 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
     setSavingSchool(true);
     const { error: rpcError } = await supabase.rpc("set_my_school", { p_school: school.id });
     if (rpcError) {
+      const inactive = `${rpcError.message} ${rpcError.details ?? ""} ${rpcError.hint ?? ""}`
+        .toLowerCase()
+        .includes("inactive");
       const { data } = await supabase
         .from("profiles")
         .select("id, name, bio, avatar_url, created_at, school_id, schools(id, name, short_name)")
         .eq("id", user.id)
         .maybeSingle();
-      const next = (data as Profile | null) ?? null;
+      const loaded = (data as Profile | null) ?? null;
+      const next = loaded
+        ? { ...loaded, avatar_url: await signAvatarDisplayUrl(supabase, loaded.avatar_url) }
+        : null;
       if (next?.school_id) {
         setProfile(next);
         setPickingSchool(false);
@@ -265,7 +332,9 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
         return;
       }
       setSavingSchool(false);
-      setError("Não foi possível salvar sua escola. Tente de novo.");
+      setError(
+        inactive ? INACTIVE_SCHOOL_NOTICE : "Não foi possível salvar sua escola. Tente de novo.",
+      );
       return;
     }
 
@@ -304,7 +373,8 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
       <section className="card p-4">
         <div className="flex items-center gap-3">
           {profile?.avatar_url ? (
-            <img
+            <AvatarImage
+              profileId={user.id}
               src={profile.avatar_url}
               alt={name ? `Foto de ${name}` : "Foto do perfil"}
               className="size-16 rounded-full object-cover"
@@ -319,6 +389,26 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
             <p className="truncate text-sm text-muted">{user.email}</p>
             {campus ? <p className="truncate text-sm text-muted">{campus}</p> : null}
           </div>
+        </div>
+        <div className="mt-3">
+          <input
+            ref={avatarRef}
+            id="profile-photo"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
+            className="sr-only"
+            disabled={avatarBusy}
+            onChange={(event) => void onAvatar(event.target.files?.[0])}
+          />
+          <label
+            htmlFor="profile-photo"
+            className={
+              "inline-flex min-h-11 items-center rounded-lg border border-line px-4 text-sm font-bold text-blue-ink " +
+              (avatarBusy ? "pointer-events-none opacity-60" : "")
+            }
+          >
+            {avatarBusy ? "Enviando foto…" : "Escolher foto"}
+          </label>
         </div>
         <ProfileSocial profileId={user.id} viewerId={user.id} initial={followStats} />
         <p className="mt-4 text-sm">{bio || "Sem bio ainda."}</p>
@@ -364,8 +454,11 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
             ) : null}
             {chosen ? (
               <p className="text-sm text-muted">
-                Você vai entrar no campus da {chosen.name}. Depois de escolher, não dá para trocar.
+                Você vai entrar no campus {chosen.short_name} ({chosen.name}).
               </p>
+            ) : null}
+            {schoolsLoaded && !schoolsLoading && !schoolsError && schools.length === 0 ? (
+              <p className="text-sm text-muted">Nenhuma escola disponível no momento.</p>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <button
@@ -494,7 +587,7 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
                 aria-describedby="signup-school-help"
                 className={fieldClass}
               >
-                <option value="">Pular – não estudo em nenhuma dessas</option>
+                <option value="">Pular – nenhuma dessas</option>
                 {schools.map((school) => (
                   <option key={school.id} value={school.id}>
                     {school.name}

@@ -13,13 +13,9 @@
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 8080",
     "build": "NEXT_DIST_DIR=.next-build next build",
-    "db:migrate": "node scripts/migrate.mjs",
-    "build:dev": "node scripts/with-app-env.mjs vite build --mode development",
     "preview": "NEXT_DIST_DIR=.next-build next start --hostname 127.0.0.1 --port 8081",
-    "preview:restart": "node scripts/preview.mjs restart",
-    "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
-    "check:auth": "node scripts/check-auth-invariant.mjs",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

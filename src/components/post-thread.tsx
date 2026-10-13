@@ -4,6 +4,7 @@ import { MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { AvatarImage } from "@/components/avatar-image";
 import { PostCard } from "@/components/post-card";
 import {
   COMMENT_MAX,
@@ -344,7 +345,12 @@ function CommentRow({
     <li className="flex items-start gap-2">
       <Link href={`/perfil/${comment.author.id}`} className="shrink-0">
         {comment.author.avatarUrl ? (
-          <img src={comment.author.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
+          <AvatarImage
+            profileId={comment.author.id}
+            src={comment.author.avatarUrl}
+            alt=""
+            className="size-9 rounded-full object-cover"
+          />
         ) : (
           <span className="grid size-9 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
             {initialOf(comment.author.name)}

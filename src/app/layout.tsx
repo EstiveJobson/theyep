@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Nunito } from "next/font/google";
 import { cookies } from "next/headers";
 import { Shell } from "@/components/shell";
+import { PENDING_NOTICE_COOKIE } from "@/lib/pending-school-plan";
+import { resolveSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -11,15 +13,7 @@ const nunito = Nunito({
   display: "swap",
 });
 
-function resolveMetadataBase(): URL {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configured) return new URL(configured);
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return new URL(`https://${vercel}`);
-  return new URL("http://localhost:3000");
-}
-
-const metadataBase = resolveMetadataBase();
+const metadataBase = resolveSiteUrl();
 
 const themeInit = `(function(){try{var k="theyep-theme";var s=localStorage.getItem(k);var d=s==="dark"||(s!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",d?"#212121":"#FFFFFF");}catch(e){}})();`;
 
@@ -50,7 +44,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "TheYep",
     description: "Uma rede simples para a escola.",
-    url: "/",
+    url: metadataBase,
     type: "website",
     images: [{ url: "/og.png", width: 1200, height: 630, alt: "TheYep" }],
   },
@@ -75,6 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const theme = cookieStore.get("theyep-theme")?.value;
   const themeClass = theme === "dark" ? "dark" : "";
+  const schoolNotice = cookieStore.get(PENDING_NOTICE_COOKIE)?.value === "1";
 
   return (
     <html
@@ -88,7 +83,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: themeInit }}
         />
-        <Shell>{children}</Shell>
+        <Shell schoolNotice={schoolNotice}>{children}</Shell>
       </body>
     </html>
   );

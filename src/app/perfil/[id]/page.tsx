@@ -4,6 +4,7 @@ import { PublicProfile } from "@/components/public-profile";
 import type { FollowStats } from "@/lib/follows";
 import { isUuid } from "@/lib/ids";
 import { joinedLabel } from "@/lib/relative-time";
+import { signAvatarDisplayUrl } from "@/lib/avatar-url";
 import { firstRelation } from "@/lib/relation";
 import { getViewer } from "@/lib/viewer";
 import { getFollowStats } from "@/server/follows";
@@ -82,13 +83,14 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   }
 
   const name = profile.name.trim() || "Sem nome";
+  const avatarUrl = await signAvatarDisplayUrl(supabase, profile.avatar_url);
   if (blockedByMe) {
     return (
       <PublicProfile
         profile={{
           id: profile.id,
           name,
-          avatarUrl: profile.avatar_url,
+          avatarUrl,
         }}
         viewerId={user?.id ?? null}
         blockedByMe
@@ -110,7 +112,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
       profile={{
         id: profile.id,
         name,
-        avatarUrl: profile.avatar_url,
+        avatarUrl,
         bio: profile.bio,
         school,
         joined: when,

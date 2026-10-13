@@ -6,6 +6,8 @@ export type FollowStats = {
 
 export type FollowDirection = "seguidores" | "seguindo";
 
+export const LIST_ERROR = "Não foi possível carregar a lista. Tente de novo.";
+
 export type FollowPerson = {
   id: string;
   name: string;

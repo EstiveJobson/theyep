@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { AvatarImage } from "@/components/avatar-image";
 import type { BlockedPerson } from "@/lib/blocks";
 import type { FeedCursor } from "@/lib/feed-cursor";
 import { loadBlocks, setBlock } from "@/server/blocks";
@@ -135,7 +136,8 @@ export function BlockList({
           <li key={person.id} className="flex items-center gap-3 px-4 py-3">
             <Link href={`/perfil/${person.id}`} className="flex min-w-0 flex-1 items-center gap-3">
               {person.avatarUrl ? (
-                <img
+                <AvatarImage
+                  profileId={person.id}
                   src={person.avatarUrl}
                   alt=""
                   className="size-10 shrink-0 rounded-full object-cover"
