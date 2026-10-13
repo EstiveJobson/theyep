@@ -1,4 +1,5 @@
-const MAX_EDGE = 1080;
+export const POST_PHOTO_EDGE = 1080;
+export const AVATAR_EDGE = 320;
 const QUALITY = 0.8;
 const HARD_BYTES = 2 * 1024 * 1024;
 const SOURCE_LIMIT = 30 * 1024 * 1024;
@@ -71,16 +72,21 @@ async function encode(canvas: HTMLCanvasElement): Promise<CompressedPhoto> {
 }
 
 /**
- * Longest side at most 1080px, WebP at quality 0.8.
- * JPEG at 0.8 when the browser cannot encode WebP.
- * Post photos and avatars both use this. Files already stored are left as they are.
+ * WebP at quality 0.8, or JPEG at 0.8 when the browser cannot encode WebP.
+ * Posts use 1080px. Avatars use 320px. Files already stored are left as they are.
  */
-export async function compressPhoto(file: File): Promise<CompressedPhoto> {
-  let edge = MAX_EDGE;
+export async function compressPhoto(
+  file: File,
+  maxEdge = POST_PHOTO_EDGE,
+): Promise<CompressedPhoto> {
+  let edge = maxEdge;
+  const floor = Math.min(480, Math.max(1, Math.round(maxEdge / 2)));
   let image = await encode(await draw(file, edge));
 
-  while (image.blob.size > HARD_BYTES && edge > 480) {
-    edge = Math.round(edge * 0.75);
+  while (image.blob.size > HARD_BYTES && edge > floor) {
+    const next = Math.max(floor, Math.round(edge * 0.75));
+    if (next === edge) break;
+    edge = next;
     image = await encode(await draw(file, edge));
   }
 

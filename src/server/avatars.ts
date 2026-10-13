@@ -18,7 +18,7 @@ export async function refreshAvatar(
   if (error || !data) return { ok: false };
 
   const raw = (data as { avatar_url: string | null }).avatar_url;
-  const url = await signAvatarDisplayUrl(supabase, raw);
+  const url = await signAvatarDisplayUrl(supabase, profileId, raw);
   if (!url) return { ok: false };
   return { ok: true, url };
 }

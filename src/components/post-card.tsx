@@ -4,9 +4,11 @@ import { Heart, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { AvatarImage } from "@/components/avatar-image";
+import { subscribeSignedMedia } from "@/components/signed-media-refresh";
+import { postPhotoPath } from "@/lib/avatar-path";
 import { commentLabel, nextLikeCount } from "@/lib/engagement-rules";
+import { imageRetryOnError, imageRetryReset, type ImageRetryState } from "@/lib/image-retry";
 import { formatRelativePt } from "@/lib/relative-time";
-import { SIGNED_URL_REFRESH_MS } from "@/lib/signed-url";
 import type { FeedPost } from "@/server/posts";
 import { deletePost, refreshPostPhoto } from "@/server/posts";
 import { toggleLike } from "@/server/engagement";
@@ -31,10 +33,12 @@ export function PostCard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
+  const photoPath = postPhotoPath(post.photoUrl);
+  const photoUrlProp = useRef(post.photoUrl);
+  photoUrlProp.current = post.photoUrl;
   const [photoUrl, setPhotoUrl] = useState(post.photoUrl);
   const [photoBroken, setPhotoBroken] = useState(false);
-  const retriedPhoto = useRef<string | null>(null);
-  const photoRefresh = useRef(false);
+  const retryState = useRef<ImageRetryState>(imageRetryReset());
   const [liked, setLiked] = useState(post.likedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [commentCount, setCommentCount] = useState(post.commentCount);
@@ -51,22 +55,21 @@ export function PostCard({
   }, [post.commentCount]);
 
   useEffect(() => {
-    setPhotoUrl(post.photoUrl);
+    setPhotoUrl(photoUrlProp.current);
     setPhotoBroken(false);
-    retriedPhoto.current = null;
-  }, [post.id, post.photoUrl]);
+    retryState.current = imageRetryReset();
+  }, [post.id, photoPath]);
 
   useEffect(() => {
-    if (!post.photoUrl) return;
-    const id = window.setInterval(() => {
-      void refreshPostPhoto(post.id).then((result) => {
-        if (!result.ok) return;
-        setPhotoUrl(result.url);
+    if (!photoPath) return;
+    return subscribeSignedMedia("post", post.id, (next) => {
+      retryState.current = imageRetryReset();
+      if (next) {
+        setPhotoUrl(next);
         setPhotoBroken(false);
-      });
-    }, SIGNED_URL_REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, [post.id, post.photoUrl]);
+      }
+    });
+  }, [post.id, photoPath]);
 
   useEffect(() => {
     setLiked(post.likedByMe);
@@ -110,20 +113,15 @@ export function PostCard({
   }, [photoOpen]);
 
   function onPhotoError() {
-    if (!photoUrl) {
+    const decision = imageRetryOnError(retryState.current);
+    retryState.current = decision.state;
+    if (decision.action === "fallback") {
       setPhotoBroken(true);
       return;
     }
-    if (retriedPhoto.current === photoUrl) {
-      if (!photoRefresh.current) setPhotoBroken(true);
-      return;
-    }
-    const failed = photoUrl;
-    retriedPhoto.current = failed;
-    photoRefresh.current = true;
     void refreshPostPhoto(post.id).then((result) => {
-      photoRefresh.current = false;
-      if (result.ok && result.url !== failed) {
+      if (!retryState.current.retried) return;
+      if (result.ok) {
         setPhotoUrl(result.url);
         setPhotoBroken(false);
         return;
@@ -178,18 +176,17 @@ export function PostCard({
     <article className={`card relative p-4 ${menu ? "z-10" : ""}`}>
       <div className="flex items-start gap-2">
         <Link href={`/perfil/${post.author.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-          {post.author.avatarUrl ? (
-            <AvatarImage
-              profileId={post.author.id}
-              src={post.author.avatarUrl}
-              alt=""
-              className="size-10 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
-              {initialOf(post.author.name)}
-            </span>
-          )}
+          <AvatarImage
+            profileId={post.author.id}
+            src={post.author.avatarUrl}
+            alt=""
+            className="size-10 shrink-0 rounded-full object-cover"
+            fallback={
+              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
+                {initialOf(post.author.name)}
+              </span>
+            }
+          />
           <span className="min-w-0">
             <span className="block truncate font-extrabold">{post.author.name}</span>
             {meta ? <span className="block truncate text-sm text-muted">{meta}</span> : null}

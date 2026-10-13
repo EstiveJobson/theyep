@@ -1,22 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { avatarStoragePath } from "@/lib/avatar-path";
+import { ownedStoragePath } from "@/lib/avatar-path";
 import { SIGNED_URL_SECONDS } from "@/lib/signed-url";
 
-export function avatarForDisplay(raw: string | null, signed: Map<string, string>): string | null {
-  if (!raw) return null;
-  const next = signed.get(raw);
-  if (next) return next;
-  if (avatarStoragePath(raw)) return null;
-  return raw;
+export function avatarForDisplay(ownerId: string, signed: Map<string, string>): string | null {
+  return signed.get(ownerId) ?? null;
 }
 
 export async function signAvatarDisplayUrl(
   supabase: SupabaseClient,
+  ownerId: string,
   value: string | null,
 ): Promise<string | null> {
-  if (!value) return null;
-  const path = avatarStoragePath(value);
-  if (!path) return value;
+  const path = ownedStoragePath(ownerId, value);
+  if (!path) return null;
   const { data, error } = await supabase.storage
     .from("avatars")
     .createSignedUrl(path, SIGNED_URL_SECONDS);

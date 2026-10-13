@@ -7,7 +7,9 @@ update storage.buckets
 set public = false
 where id = 'avatars';
 
-alter table storage.objects enable row level security;
+-- storage.objects already has row level security on hosted Supabase.
+-- postgres is not the owner of that table, so ALTER TABLE storage.objects fails
+-- and rolls the whole file back. Do not alter storage tables here.
 
 -- Anonymous clients could list every avatar path (user ids) and download the files.
 drop policy if exists "avatares publicos para leitura" on storage.objects;

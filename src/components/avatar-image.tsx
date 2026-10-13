@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { SIGNED_URL_REFRESH_MS } from "@/lib/signed-url";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { subscribeSignedMedia } from "@/components/signed-media-refresh";
+import { ownedStoragePath } from "@/lib/avatar-path";
+import { imageRetryOnError, imageRetryReset, type ImageRetryState } from "@/lib/image-retry";
 import { refreshAvatar } from "@/server/avatars";
 
 export function AvatarImage({
@@ -9,28 +11,39 @@ export function AvatarImage({
   src,
   alt,
   className,
+  fallback,
 }: {
   profileId: string;
-  src: string;
+  src: string | null;
   alt: string;
   className: string;
+  fallback: ReactNode;
 }) {
-  const [url, setUrl] = useState(src);
-  const retriedFor = useRef<string | null>(null);
+  const path = ownedStoragePath(profileId, src);
+  const srcRef = useRef(src);
+  srcRef.current = src;
+  const [url, setUrl] = useState<string | null>(path ? src : null);
+  const [broken, setBroken] = useState(false);
+  const retryState = useRef<ImageRetryState>(imageRetryReset());
 
   useEffect(() => {
-    setUrl(src);
-    retriedFor.current = null;
-  }, [profileId, src]);
+    setUrl(path ? srcRef.current : null);
+    setBroken(false);
+    retryState.current = imageRetryReset();
+  }, [profileId, path]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      void refreshAvatar(profileId).then((result) => {
-        if (result.ok) setUrl(result.url);
-      });
-    }, SIGNED_URL_REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, [profileId]);
+    if (!path) return;
+    return subscribeSignedMedia("avatar", profileId, (next) => {
+      retryState.current = imageRetryReset();
+      if (next) {
+        setUrl(next);
+        setBroken(false);
+      }
+    });
+  }, [profileId, path]);
+
+  if (!path || broken || !url) return fallback;
 
   return (
     <img
@@ -38,11 +51,20 @@ export function AvatarImage({
       alt={alt}
       className={className}
       onError={() => {
-        if (retriedFor.current === url) return;
-        const failed = url;
-        retriedFor.current = failed;
+        const decision = imageRetryOnError(retryState.current);
+        retryState.current = decision.state;
+        if (decision.action === "fallback") {
+          setBroken(true);
+          return;
+        }
         void refreshAvatar(profileId).then((result) => {
-          if (result.ok && result.url !== failed) setUrl(result.url);
+          if (!retryState.current.retried) return;
+          if (result.ok) {
+            setUrl(result.url);
+            setBroken(false);
+            return;
+          }
+          setBroken(true);
         });
       }}
     />

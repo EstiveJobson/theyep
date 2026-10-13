@@ -75,17 +75,18 @@ export function PublicProfile({
     }
   }
 
-  const photo = profile.avatarUrl ? (
+  const photo = (
     <AvatarImage
       profileId={profile.id}
       src={profile.avatarUrl}
       alt={profile.name === "Sem nome" ? "Foto do perfil" : `Foto de ${profile.name}`}
       className="size-16 rounded-full object-cover"
+      fallback={
+        <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
+          {(profile.name.charAt(0) || "Y").toUpperCase()}
+        </span>
+      }
     />
-  ) : (
-    <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
-      {(profile.name.charAt(0) || "Y").toUpperCase()}
-    </span>
   );
 
   if (blocked) {

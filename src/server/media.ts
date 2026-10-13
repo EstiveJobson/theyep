@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { avatarStoragePath } from "@/lib/avatar-path";
+import { ownedStoragePath } from "@/lib/avatar-path";
 import { avatarForDisplay } from "@/lib/avatar-url";
 import { mapPostRow, type PostRow } from "@/lib/map-post";
 import { SIGNED_URL_SECONDS } from "@/lib/signed-url";
@@ -31,19 +31,18 @@ export async function signObjectPaths(
 
 export async function signAvatarValues(
   supabase: SupabaseClient,
-  values: Array<string | null | undefined>,
+  values: Array<{ ownerId: string; avatarUrl: string | null | undefined }>,
 ): Promise<Map<string, string>> {
-  const rawToPath = new Map<string, string>();
+  const ownerToPath = new Map<string, string>();
   for (const value of values) {
-    if (!value) continue;
-    const path = avatarStoragePath(value);
-    if (path) rawToPath.set(value, path);
+    const path = ownedStoragePath(value.ownerId, value.avatarUrl);
+    if (path) ownerToPath.set(value.ownerId, path);
   }
-  const signedPaths = await signObjectPaths(supabase, "avatars", [...rawToPath.values()]);
+  const signedPaths = await signObjectPaths(supabase, "avatars", [...ownerToPath.values()]);
   const signed = new Map<string, string>();
-  for (const [raw, path] of rawToPath) {
+  for (const [ownerId, path] of ownerToPath) {
     const url = signedPaths.get(path);
-    if (url) signed.set(raw, url);
+    if (url) signed.set(ownerId, url);
   }
   return signed;
 }
@@ -59,13 +58,13 @@ export async function signFeedPosts(
   );
   const avatarSigned = await signAvatarValues(
     supabase,
-    rows.map((row) => row.avatar_url),
+    rows.map((row) => ({ ownerId: row.author_id, avatarUrl: row.avatar_url })),
   );
   return rows.map((row) =>
     mapPostRow(
       {
         ...row,
-        avatar_url: avatarForDisplay(row.avatar_url, avatarSigned),
+        avatar_url: avatarForDisplay(row.author_id, avatarSigned),
       },
       photoSigned,
     ),

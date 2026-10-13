@@ -83,7 +83,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
   }
 
   const name = profile.name.trim() || "Sem nome";
-  const avatarUrl = await signAvatarDisplayUrl(supabase, profile.avatar_url);
+  const avatarUrl = await signAvatarDisplayUrl(supabase, profile.id, profile.avatar_url);
   if (blockedByMe) {
     return (
       <PublicProfile

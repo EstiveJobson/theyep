@@ -145,12 +145,12 @@ export async function loadFollowList(input: {
   const page = rows.slice(0, PAGE);
   const avatars = await signAvatarValues(
     supabase,
-    page.map((row) => row.avatar_url),
+    page.map((row) => ({ ownerId: row.profile_id, avatarUrl: row.avatar_url })),
   );
   const people = page.map((row) => ({
     id: row.profile_id,
     name: row.name?.trim() || "Sem nome",
-    avatarUrl: avatarForDisplay(row.avatar_url, avatars),
+    avatarUrl: avatarForDisplay(row.profile_id, avatars),
     schoolShortName: row.school_short_name?.trim() || null,
     followedAt: row.followed_at,
   }));

@@ -5,8 +5,9 @@ import { AvatarImage } from "@/components/avatar-image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
+import { ownedStoragePath } from "@/lib/avatar-path";
 import { signAvatarDisplayUrl } from "@/lib/avatar-url";
-import { compressPhoto, photoRejection, PHOTO_REJECTED } from "@/lib/compress-photo";
+import { AVATAR_EDGE, compressPhoto, photoRejection, PHOTO_REJECTED } from "@/lib/compress-photo";
 import { applyPendingSchool } from "@/lib/pending-school";
 import { INACTIVE_SCHOOL_NOTICE } from "@/lib/pending-school-plan";
 import { ProfileSocial } from "@/components/profile-social";
@@ -116,7 +117,7 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
         setError("Não foi possível carregar o perfil.");
       } else {
         const row = (data as Profile | null) ?? null;
-        const avatarUrl = row ? await signAvatarDisplayUrl(supabase, row.avatar_url) : null;
+        const avatarUrl = row ? await signAvatarDisplayUrl(supabase, row.id, row.avatar_url) : null;
         if (!alive) return;
         setProfile(row ? { ...row, avatar_url: avatarUrl } : null);
         setError(pendingResult === "inactive" ? INACTIVE_SCHOOL_NOTICE : "");
@@ -253,9 +254,10 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
       setError("Não foi possível enviar a foto. Tente de novo.");
       return;
     }
+    const previous = ownedStoragePath(user.id, profile?.avatar_url);
     setAvatarBusy(true);
     try {
-      const image = await compressPhoto(file);
+      const image = await compressPhoto(file, AVATAR_EDGE);
       const path = `${user.id}/${crypto.randomUUID()}.${image.extension}`;
       const { error: uploadError } = await supabase.storage
         .from("avatars")
@@ -277,13 +279,48 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
         setError("Não foi possível enviar a foto. Tente de novo.");
         return;
       }
-      const signed = await signAvatarDisplayUrl(supabase, path);
+      if (previous && previous !== path) {
+        const { error: removeError } = await supabase.storage.from("avatars").remove([previous]);
+        if (removeError) console.error("avatar delete failed", removeError.message);
+      }
+      const signed = await signAvatarDisplayUrl(supabase, user.id, path);
       setProfile((current) => (current ? { ...current, avatar_url: signed } : current));
+      router.refresh();
     } catch {
       setError("Não foi possível preparar essa foto. Use JPEG, PNG ou WebP.");
     } finally {
       setAvatarBusy(false);
       if (avatarRef.current) avatarRef.current.value = "";
+    }
+  }
+
+  async function removeAvatar() {
+    if (!user || !profile?.avatar_url || avatarBusy) return;
+    const path = ownedStoragePath(user.id, profile.avatar_url);
+    const supabase = getBrowserClient();
+    if (!supabase) {
+      setError("Não foi possível remover a foto. Tente de novo.");
+      return;
+    }
+    setAvatarBusy(true);
+    setError("");
+    try {
+      const { error: saveError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: null })
+        .eq("id", user.id);
+      if (saveError) {
+        setError("Não foi possível remover a foto. Tente de novo.");
+        return;
+      }
+      if (path) {
+        const { error: removeError } = await supabase.storage.from("avatars").remove([path]);
+        if (removeError) console.error("avatar delete failed", removeError.message);
+      }
+      setProfile((current) => (current ? { ...current, avatar_url: null } : current));
+      router.refresh();
+    } finally {
+      setAvatarBusy(false);
     }
   }
 
@@ -322,7 +359,10 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
         .maybeSingle();
       const loaded = (data as Profile | null) ?? null;
       const next = loaded
-        ? { ...loaded, avatar_url: await signAvatarDisplayUrl(supabase, loaded.avatar_url) }
+        ? {
+            ...loaded,
+            avatar_url: await signAvatarDisplayUrl(supabase, loaded.id, loaded.avatar_url),
+          }
         : null;
       if (next?.school_id) {
         setProfile(next);
@@ -372,18 +412,17 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
     return (
       <section className="card p-4">
         <div className="flex items-center gap-3">
-          {profile?.avatar_url ? (
-            <AvatarImage
-              profileId={user.id}
-              src={profile.avatar_url}
-              alt={name ? `Foto de ${name}` : "Foto do perfil"}
-              className="size-16 rounded-full object-cover"
-            />
-          ) : (
-            <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
-              {initialOf(name, user.email ?? "")}
-            </span>
-          )}
+          <AvatarImage
+            profileId={user.id}
+            src={profile?.avatar_url ?? null}
+            alt={name ? `Foto de ${name}` : "Foto do perfil"}
+            className="size-16 rounded-full object-cover"
+            fallback={
+              <span className="grid size-16 place-items-center rounded-full bg-yellow text-xl font-extrabold text-on-accent">
+                {initialOf(name, user.email ?? "")}
+              </span>
+            }
+          />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-extrabold">{name || "Sem nome"}</h1>
             <p className="truncate text-sm text-muted">{user.email}</p>
@@ -409,6 +448,16 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
           >
             {avatarBusy ? "Enviando foto…" : "Escolher foto"}
           </label>
+          {profile?.avatar_url ? (
+            <button
+              type="button"
+              onClick={() => void removeAvatar()}
+              disabled={avatarBusy}
+              className="ml-2 inline-flex min-h-11 items-center rounded-lg border border-line px-4 text-sm font-bold text-blue-ink disabled:opacity-60"
+            >
+              Remover foto
+            </button>
+          ) : null}
         </div>
         <ProfileSocial profileId={user.id} viewerId={user.id} initial={followStats} />
         <p className="mt-4 text-sm">{bio || "Sem bio ainda."}</p>
@@ -454,7 +503,8 @@ export function PerfilPanel({ followStats = null }: { followStats?: FollowStats 
             ) : null}
             {chosen ? (
               <p className="text-sm text-muted">
-                Você vai entrar no campus {chosen.short_name} ({chosen.name}).
+                Você vai entrar no campus {chosen.short_name} ({chosen.name}). Depois de escolher,
+                não dá para trocar.
               </p>
             ) : null}
             {schoolsLoaded && !schoolsLoading && !schoolsError && schools.length === 0 ? (

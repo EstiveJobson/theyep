@@ -135,18 +135,17 @@ export function BlockList({
         {people.map((person) => (
           <li key={person.id} className="flex items-center gap-3 px-4 py-3">
             <Link href={`/perfil/${person.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-              {person.avatarUrl ? (
-                <AvatarImage
-                  profileId={person.id}
-                  src={person.avatarUrl}
-                  alt=""
-                  className="size-10 shrink-0 rounded-full object-cover"
-                />
-              ) : (
-                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
-                  {initialOf(person.name)}
-                </span>
-              )}
+              <AvatarImage
+                profileId={person.id}
+                src={person.avatarUrl}
+                alt=""
+                className="size-10 shrink-0 rounded-full object-cover"
+                fallback={
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-yellow text-sm font-extrabold text-on-accent">
+                    {initialOf(person.name)}
+                  </span>
+                }
+              />
               <span className="truncate font-extrabold">{person.name}</span>
             </Link>
             <button

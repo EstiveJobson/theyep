@@ -6,6 +6,7 @@ import {
   PENDING_RETRY_COOKIE,
   pendingRetryActive,
   pendingRetryCookie,
+  pendingRetryCookieSecure,
 } from "@/lib/pending-school-plan";
 import { supabasePublicEnv } from "@/lib/supabase/env";
 
@@ -34,7 +35,8 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getUser();
   if (data.user) {
     const retryUntil = request.cookies.get(PENDING_RETRY_COOKIE)?.value;
-    if (!pendingRetryActive(retryUntil)) {
+    const secure = pendingRetryCookieSecure();
+    if (!pendingRetryActive(retryUntil, data.user.id)) {
       let result: PendingSchoolResult = "retry";
       try {
         result = await applyPendingSchool(supabase, data.user);
@@ -44,13 +46,13 @@ export async function updateSession(request: NextRequest) {
       }
 
       if (result === "retry") {
-        const cookie = pendingRetryCookie();
+        const cookie = pendingRetryCookie(data.user.id);
         response.cookies.set(PENDING_RETRY_COOKIE, cookie.value, {
           maxAge: cookie.maxAge,
           httpOnly: true,
           sameSite: "lax",
           path: "/",
-          secure: process.env.NODE_ENV === "production",
+          secure,
         });
       } else if (retryUntil) {
         response.cookies.set(PENDING_RETRY_COOKIE, "", {
@@ -58,6 +60,7 @@ export async function updateSession(request: NextRequest) {
           httpOnly: true,
           sameSite: "lax",
           path: "/",
+          secure,
         });
       }
 

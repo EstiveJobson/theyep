@@ -11,17 +11,31 @@ export type PendingRetryCookie = {
   maxAge: number;
 };
 
-export function pendingRetryCookie(now = Date.now()): PendingRetryCookie {
+export function pendingRetryCookie(userId: string, now = Date.now()): PendingRetryCookie {
   return {
     name: PENDING_RETRY_COOKIE,
-    value: String(now + PENDING_RETRY_SECONDS * 1000),
+    value: `${userId}.${now + PENDING_RETRY_SECONDS * 1000}`,
     maxAge: PENDING_RETRY_SECONDS,
   };
 }
 
-export function pendingRetryActive(value: string | undefined, now = Date.now()): boolean {
-  if (!value) return false;
-  const expiresAt = Number(value);
+export function pendingRetryCookieSecure(
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): boolean {
+  return nodeEnv === "production";
+}
+
+export function pendingRetryActive(
+  value: string | undefined,
+  userId: string,
+  now = Date.now(),
+): boolean {
+  if (!value || !userId) return false;
+  const splitAt = value.lastIndexOf(".");
+  if (splitAt <= 0) return false;
+  const owner = value.slice(0, splitAt);
+  if (owner !== userId) return false;
+  const expiresAt = Number(value.slice(splitAt + 1));
   return Number.isFinite(expiresAt) && expiresAt > now;
 }
 
@@ -54,24 +68,33 @@ export type PendingRpcPlan =
   | { action: "clear"; notice: "inactive" | null }
   | { action: "retry"; cookie: PendingRetryCookie };
 
+function retryPlan(userId: string, now: number | undefined): PendingRpcPlan {
+  return { action: "retry", cookie: pendingRetryCookie(userId, now) };
+}
+
 export function planPendingRpc(input: {
   thrown?: boolean;
   ok?: boolean;
   status?: number;
   message?: string;
   now?: number;
+  userId?: string;
 }): PendingRpcPlan {
+  const userId = input.userId ?? "";
   if (input.thrown || input.ok) {
     if (input.ok && !input.thrown) return { action: "ok" };
-    return { action: "retry", cookie: pendingRetryCookie(input.now) };
+    return retryPlan(userId, input.now);
   }
 
   const status = input.status ?? 0;
   const message = input.message ?? "";
+  if (status === 408 || status === 429 || status >= 500 || status <= 0) {
+    return retryPlan(userId, input.now);
+  }
   if (status >= 400 && status < 500) {
     const inactive = message.toLowerCase().includes("inactive");
     return { action: "clear", notice: inactive ? "inactive" : null };
   }
 
-  return { action: "retry", cookie: pendingRetryCookie(input.now) };
+  return retryPlan(userId, input.now);
 }

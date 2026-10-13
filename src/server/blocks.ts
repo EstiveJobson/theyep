@@ -80,12 +80,12 @@ export async function loadBlocks(input: {
   const page = rows.slice(0, PAGE);
   const avatars = await signAvatarValues(
     supabase,
-    page.map((row) => row.avatar_url),
+    page.map((row) => ({ ownerId: row.profile_id, avatarUrl: row.avatar_url })),
   );
   const people = page.map((row) => ({
     id: row.profile_id,
     name: row.name?.trim() || "Sem nome",
-    avatarUrl: avatarForDisplay(row.avatar_url, avatars),
+    avatarUrl: avatarForDisplay(row.profile_id, avatars),
     blockedAt: row.blocked_at,
   }));
   const last = people.length === PAGE ? page[PAGE - 1] : null;

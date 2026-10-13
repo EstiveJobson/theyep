@@ -46,7 +46,7 @@ function mapComment(row: CommentRow, avatars: Map<string, string>): CommentItem 
     author: {
       id: row.user_id,
       name: row.author_name?.trim() || "Sem nome",
-      avatarUrl: avatarForDisplay(row.avatar_url, avatars),
+      avatarUrl: avatarForDisplay(row.user_id, avatars),
     },
   };
 }
@@ -105,7 +105,7 @@ async function loadCommentPage(
   const pageRows = rows.slice(0, COMMENT_PAGE);
   const avatars = await signAvatarValues(
     supabase,
-    pageRows.map((row) => row.avatar_url),
+    pageRows.map((row) => ({ ownerId: row.user_id, avatarUrl: row.avatar_url })),
   );
   const page = pageRows.map((row) => mapComment(row, avatars));
   const last = page.length === COMMENT_PAGE ? rows[COMMENT_PAGE - 1] : null;
@@ -223,7 +223,9 @@ export async function createComment(
     .eq("id", user.id)
     .maybeSingle();
   const author = profile as { name: string | null; avatar_url: string | null } | null;
-  const avatars = await signAvatarValues(supabase, [author?.avatar_url ?? null]);
+  const avatars = await signAvatarValues(supabase, [
+    { ownerId: row.user_id, avatarUrl: author?.avatar_url ?? null },
+  ]);
 
   revalidatePath("/");
   revalidatePath(`/post/${postId}`);
@@ -236,7 +238,7 @@ export async function createComment(
       author: {
         id: row.user_id,
         name: author?.name?.trim() || "Sem nome",
-        avatarUrl: avatarForDisplay(author?.avatar_url ?? null, avatars),
+        avatarUrl: avatarForDisplay(row.user_id, avatars),
       },
     },
   };
