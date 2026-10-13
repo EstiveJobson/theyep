@@ -1,14 +1,15 @@
 -- Proves likes and comments follow post visibility.
--- Run in the Supabase SQL Editor (as postgres) after 0004_likes_comments.sql.
+-- Run in the Supabase SQL Editor (as postgres) after 0007_pre_deploy.sql.
+-- The schools below belong to this test. The placeholders from 0001 are inactive.
 -- The script starts a transaction and rolls it back, so it leaves no data.
 -- A failing check aborts with FAIL: ...
 
 begin;
 
-insert into public.schools (id, name, short_name, active)
+insert into public.schools (id, name, short_name, slug, active)
 values
-  ('44444444-4444-4444-8444-444444444444', 'QA Escola 1', 'E1', true),
-  ('55555555-5555-4555-8555-555555555555', 'QA Escola 2', 'E2', true);
+  ('44444444-4444-4444-8444-444444444444', 'QA Escola 1', 'E1', 'qa-escola-1', true),
+  ('55555555-5555-4555-8555-555555555555', 'QA Escola 2', 'E2', 'qa-escola-2', true);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,

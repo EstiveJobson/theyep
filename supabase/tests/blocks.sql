@@ -1,15 +1,16 @@
 -- Proves blocks are one-way to read, mutual to enforce, and do not weaken Campus.
 -- There is no public function that answers "did A block B?".
--- Run in the Supabase SQL Editor (as postgres) after 0006_blocks.sql.
+-- Run in the Supabase SQL Editor (as postgres) after 0007_pre_deploy.sql.
+-- The schools below belong to this test. The placeholders from 0001 are inactive.
 -- The script starts a transaction and rolls it back, so it leaves no data.
 -- A failing check aborts with FAIL: ...
 
 begin;
 
-insert into public.schools (id, name, short_name, active)
+insert into public.schools (id, name, short_name, slug, active)
 values
-  ('e1111111-1111-4111-8111-111111111111', 'QA Block Escola 1', 'BE1', true),
-  ('e2222222-2222-4222-8222-222222222222', 'QA Block Escola 2', 'BE2', true);
+  ('e1111111-1111-4111-8111-111111111111', 'QA Block Escola 1', 'BE1', 'qa-block-1', true),
+  ('e2222222-2222-4222-8222-222222222222', 'QA Block Escola 2', 'BE2', 'qa-block-2', true);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
