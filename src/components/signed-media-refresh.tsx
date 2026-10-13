@@ -22,8 +22,12 @@ async function runTick() {
   ticking = true;
   const snapshot = [...slots.values()];
   try {
-    const postIds = snapshot.filter((slot) => slot.kind === "post").map((slot) => slot.id);
-    const profileIds = snapshot.filter((slot) => slot.kind === "avatar").map((slot) => slot.id);
+    const postIds = [
+      ...new Set(snapshot.filter((slot) => slot.kind === "post").map((slot) => slot.id)),
+    ];
+    const profileIds = [
+      ...new Set(snapshot.filter((slot) => slot.kind === "avatar").map((slot) => slot.id)),
+    ];
     const result = await refreshSignedMedia({ postIds, profileIds });
     for (const slot of snapshot) {
       const url = slot.kind === "post" ? result.posts[slot.id] : result.avatars[slot.id];

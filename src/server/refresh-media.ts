@@ -26,11 +26,9 @@ export async function refreshSignedMedia(input: {
   if (postIds.length > 0) {
     const { data } = await supabase.from("posts").select("id, photo_path").in("id", postIds);
     const rows = (data ?? []) as { id: string; photo_path: string | null }[];
-    const signed = await signObjectPaths(
-      supabase,
-      "post-photos",
-      rows.flatMap((row) => (row.photo_path ? [row.photo_path] : [])),
-    );
+    const signed = await signObjectPaths(supabase, "post-photos", [
+      ...new Set(rows.flatMap((row) => (row.photo_path ? [row.photo_path] : []))),
+    ]);
     for (const row of rows) {
       if (!row.photo_path) continue;
       const url = signed.get(row.photo_path);
@@ -45,11 +43,9 @@ export async function refreshSignedMedia(input: {
       const path = ownedStoragePath(row.id, row.avatar_url);
       return path ? [{ id: row.id, path }] : [];
     });
-    const signed = await signObjectPaths(
-      supabase,
-      "avatars",
-      owned.map((row) => row.path),
-    );
+    const signed = await signObjectPaths(supabase, "avatars", [
+      ...new Set(owned.map((row) => row.path)),
+    ]);
     for (const row of owned) {
       const url = signed.get(row.path);
       if (url) avatars[row.id] = url;

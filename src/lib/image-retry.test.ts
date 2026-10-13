@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { imageRetryOnError, imageRetryReset } from "./image-retry.ts";
+import { imageAlreadyFailed, imageRetryOnError, imageRetryReset } from "./image-retry.ts";
 
 test("an image retries once, then falls back, even when each URL is new", () => {
   let state = imageRetryReset();
@@ -14,6 +14,13 @@ test("an image retries once, then falls back, even when each URL is new", () => 
 
   const third = imageRetryOnError(second.state);
   assert.equal(third.action, "fallback");
+});
+
+test("a finished image with no pixels failed before hydration", () => {
+  assert.equal(imageAlreadyFailed({ complete: true, naturalWidth: 0 }), true);
+  assert.equal(imageAlreadyFailed({ complete: true, naturalWidth: 12 }), false);
+  assert.equal(imageAlreadyFailed({ complete: false, naturalWidth: 0 }), false);
+  assert.equal(imageAlreadyFailed(null), false);
 });
 
 test("the 10-minute tick or a new storage path clears the retry", () => {

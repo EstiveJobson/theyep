@@ -7,7 +7,12 @@ import { AvatarImage } from "@/components/avatar-image";
 import { subscribeSignedMedia } from "@/components/signed-media-refresh";
 import { postPhotoPath } from "@/lib/avatar-path";
 import { commentLabel, nextLikeCount } from "@/lib/engagement-rules";
-import { imageRetryOnError, imageRetryReset, type ImageRetryState } from "@/lib/image-retry";
+import {
+  imageAlreadyFailed,
+  imageRetryOnError,
+  imageRetryReset,
+  type ImageRetryState,
+} from "@/lib/image-retry";
 import { formatRelativePt } from "@/lib/relative-time";
 import type { FeedPost } from "@/server/posts";
 import { deletePost, refreshPostPhoto } from "@/server/posts";
@@ -39,6 +44,9 @@ export function PostCard({
   const [photoUrl, setPhotoUrl] = useState(post.photoUrl);
   const [photoBroken, setPhotoBroken] = useState(false);
   const retryState = useRef<ImageRetryState>(imageRetryReset());
+  const photoRef = useRef<HTMLImageElement>(null);
+  const openPhotoRef = useRef<HTMLImageElement>(null);
+  const onPhotoErrorRef = useRef<() => void>(() => {});
   const [liked, setLiked] = useState(post.likedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [commentCount, setCommentCount] = useState(post.commentCount);
@@ -59,6 +67,17 @@ export function PostCard({
     setPhotoBroken(false);
     retryState.current = imageRetryReset();
   }, [post.id, photoPath]);
+
+  useEffect(() => {
+    const thumb = photoRef.current;
+    if (imageAlreadyFailed(thumb)) onPhotoErrorRef.current();
+  }, [photoUrl, photoPath]);
+
+  useEffect(() => {
+    if (!photoOpen) return;
+    const open = openPhotoRef.current;
+    if (imageAlreadyFailed(open)) onPhotoErrorRef.current();
+  }, [photoOpen, photoUrl]);
 
   useEffect(() => {
     if (!photoPath) return;
@@ -112,7 +131,7 @@ export function PostCard({
     };
   }, [photoOpen]);
 
-  function onPhotoError() {
+  onPhotoErrorRef.current = () => {
     const decision = imageRetryOnError(retryState.current);
     retryState.current = decision.state;
     if (decision.action === "fallback") {
@@ -128,6 +147,10 @@ export function PostCard({
       }
       setPhotoBroken(true);
     });
+  };
+
+  function onPhotoError() {
+    onPhotoErrorRef.current();
   }
 
   async function remove() {
@@ -258,6 +281,7 @@ export function PostCard({
           aria-label="Ver foto"
         >
           <img
+            ref={photoRef}
             src={photoUrl}
             alt="Foto do post"
             loading="lazy"
@@ -322,6 +346,7 @@ export function PostCard({
             Fechar
           </button>
           <img
+            ref={openPhotoRef}
             src={photoUrl}
             alt="Foto do post"
             className="max-h-[100dvh] max-w-full object-contain"

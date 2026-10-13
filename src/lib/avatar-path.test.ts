@@ -24,6 +24,10 @@ test("only the profile owner's folder is an avatar path we sign", () => {
   );
   assert.equal(ownedStoragePath(me, "https://evil.example/a.png"), null);
   assert.equal(ownedStoragePath(me, null), null);
+  assert.equal(ownedStoragePath(me, `${me}/.`), null);
+  assert.equal(ownedStoragePath(me, `${me}/..`), null);
+  assert.equal(ownedStoragePath(me, `${me}/.hidden`), null);
+  assert.equal(ownedStoragePath(me, `${me}/face.webp`), `${me}/face.webp`);
 });
 
 test("post photo paths ignore the signed-url token", () => {

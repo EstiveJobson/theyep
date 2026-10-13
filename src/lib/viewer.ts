@@ -12,10 +12,12 @@ export type Viewer = {
   supabase: SupabaseClient | null;
   user: User | null;
   school: ViewerSchool | null;
+  avatarUrl: string | null;
 };
 
 type ProfileRow = {
   school_id: string | null;
+  avatar_url: string | null;
   schools:
     | { id: string; name: string; short_name: string }
     | { id: string; name: string; short_name: string }[]
@@ -24,18 +26,24 @@ type ProfileRow = {
 
 export async function getViewer(): Promise<Viewer> {
   const supabase = await createClient();
-  if (!supabase) return { supabase: null, user: null, school: null };
+  if (!supabase) return { supabase: null, user: null, school: null, avatarUrl: null };
 
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return { supabase, user: null, school: null };
+  if (error || !data.user) return { supabase, user: null, school: null, avatarUrl: null };
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("school_id, schools(id, name, short_name)")
+    .select("school_id, avatar_url, schools(id, name, short_name)")
     .eq("id", data.user.id)
     .maybeSingle();
 
-  return { supabase, user: data.user, school: schoolFrom(profile as ProfileRow | null) };
+  const row = profile as ProfileRow | null;
+  return {
+    supabase,
+    user: data.user,
+    school: schoolFrom(row),
+    avatarUrl: row?.avatar_url ?? null,
+  };
 }
 
 function schoolFrom(profile: ProfileRow | null): ViewerSchool | null {

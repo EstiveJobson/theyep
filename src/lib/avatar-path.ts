@@ -1,5 +1,5 @@
 const AVATAR_PATH_RE =
-  /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([A-Za-z0-9._-]+)$/i;
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([A-Za-z0-9_-][A-Za-z0-9._-]*)$/i;
 
 function decodePath(value: string): string {
   try {
