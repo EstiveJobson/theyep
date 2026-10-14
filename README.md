@@ -1,10 +1,10 @@
 # TheYep
 
+TheYep is a fun, colorful social network for students and schools, built with Next.js, Supabase and Vercel. You sign up with your email, set up your profile, and follow what people at your school are posting. It is mobile-first, can be installed as an app (PWA), and the interface is in Brazilian Portuguese.
+
 > Bringing back the fun, colorful and social internet, made for students and schools.
 
-**Status:** v1 in development 🚧
-
-TheYep is a lightweight social network for school communities: you sign up with your email, set up your profile and follow what people at your school are posting. It is mobile-first and can be installed as an app (PWA). The app's interface is in Brazilian Portuguese.
+**Status:** v1 live at theyep.com.br
 
 ## Features
 
